@@ -58,14 +58,16 @@ php websocket.php group1 0.0.0.0:8090 cliCollectors
 | **`/index`** | 返回 `examples/index.html`：浏览器里连 WebSocket、`joinGroupBy_Id` 入组、查看组播日志。 |
 | **WebSocket** | 对支持升级的请求走 WebSocket（默认路径一般为 `/`）。 |
 | **`POST /`** | `WebsocketGroupMiddleware`：JSON 体中提供 `event` 及对应参数，可调用 `ConnectionGroup` 上的方法（如 `joinGroupBy_Id`）。 |
+| **`GET /api/files`** | 向 **cliGroup** 广播 `api_files:<reqId>:{}`；tail-cli 回 `api_files_response:<reqId>:<json>`，HTTP 返回该 JSON，并向 **组播组** 推送 `api_files_response:<json>`（供页面实时更新）。 |
 
 ### WebSocket 消息约定（服务端）
 
 - 连接建立后向该连接发送：`open:<_id>`（`<_id>` 为连接 id）。
 - 文本 **`ping`**：服务端回复 `open:<_id>`。
+- 文本 **`api_files_response:<reqId>:<json>`**（来自 tail-cli）：匹配挂起的 `/api/files` 请求，并向组播组发送 **`api_files_response:<json>`**（无 reqId）。
 - 其它文本：按 **Base64** 解码后的二进制/文本内容向 **当前 `groupId` 组** 组播，**排除**发送者自身。
 
-浏览器 `tail-cli` 发送前会对内容做 Base64，与上述逻辑一致。
+浏览器与 `tail-cli` 上报日志时会对内容做 Base64；**`api_files` / `api_files_response` 为明文**，不走 Base64。
 
 ## 浏览器页面 `examples/index.html`
 
@@ -73,7 +75,8 @@ php websocket.php group1 0.0.0.0:8090 cliCollectors
 
 - 连接 WebSocket 后，若收到 `open:` 且已填写 **token、groupId**，会自动 `POST` 执行 `joinGroupBy_Id`。
 - 否则保持连接，补全后点击 **绑定**（不必重连）。
-- 非 `open:` 开头的消息在页面下方组播日志区域显示；支持贴底自动滚动、上滑查看时暂停自动滚到底。
+- 左侧 **获取文件** 调用 **`GET /api/files`**；并监听 WebSocket **`api_files_response:`** 更新列表。
+- 非 `open:` / 非 `api_files_response:` 的消息在组播日志区域显示；支持贴底自动滚动。
 
 查询参数示例：`?token=...&groupId=group1&wsPath=/`
 
@@ -90,6 +93,7 @@ php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollecto
 - **`--cli-group`**：必选，须与 `websocket.php` 的 **cliGroup** 一致；收到 `open:` 后向同源 HTTP `POST /` 执行 `joinGroupBy_Id`，**成功后才 `tail->start()`**。
 - 若服务端配置了 **`TOKEN`**，tail-cli 会取 **`TOKEN` 环境变量中逗号分隔的第一段** 作为 POST 的 `token`。
 - 每 **30 秒**发送文本 `ping`；断线后自动重连；日志 **Base64** 后发到 **组播组 groupId**。
+- 收到 **`api_files:<reqId>:...`** 时以明文回复 **`api_files_response:<reqId>:{"files":[...]}`**（当前 tail 监视的路径列表）。
 
 其它选项与 GNU tail 类似：`-n` / `--lines`、`-s` 目录扫描间隔、`--name` 通配等，见脚本内 `--help`。
 
@@ -115,6 +119,7 @@ docker run --rm -p 8090:8090 -e TOKEN=secret reactphp-tail-websocket \
 | `websocket.php` | HTTP + WebSocket 服务入口 |
 | `examples/index.html` | 组播日志查看与绑定 UI |
 | `examples/tail-cli.php` | 带 WebSocket 上行的 tail 客户端 |
+| `examples/TailCliTail.php` | 扩展 Tail，暴露 `getWatchedFilePaths()` 供 `/api/files` 使用 |
 | `composer.json` | `reactphp-x/tail`、`reactphp-x/websocket-group`、`ratchet/pawl` 等 |
 
 ## 许可证

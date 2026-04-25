@@ -14,10 +14,11 @@
  */
 
 require __DIR__ . '/../vendor/autoload.php';
+require __DIR__ . '/TailCliTail.php';
 
 use React\EventLoop\Loop;
 use React\Http\Browser;
-use ReactphpX\Tail\Tail;
+use ReactphpX\Tail\TailCliTail;
 
 $lines = 5;
 $tick = 5.0;
@@ -125,7 +126,7 @@ foreach ($paths as $p) {
     }
 }
 
-$tail = new Tail();
+$tail = new TailCliTail();
 $tail->setLastLine($lines);
 $tail->setTick($tick);
 
@@ -144,10 +145,11 @@ if ($te !== false && $te !== '') {
 }
 
 $browser = new Browser();
+$bandwidth = new \ReactphpX\Bandwidth\Bandwidth(1024 * 512, 1024 * 512);
 
-$connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser) {
+$connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser, $bandwidth) {
     \Ratchet\Client\connect($wsUrl)->then(
-        function (\Ratchet\Client\WebSocket $conn) use (&$connectWs, &$ws, $tail, &$tailStarted, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser) {
+        function (\Ratchet\Client\WebSocket $conn) use (&$connectWs, &$ws, $tail, &$tailStarted, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth) {
             if ($ws['pingTimer'] !== null) {
                 Loop::cancelTimer($ws['pingTimer']);
             }
@@ -159,8 +161,158 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
             });
 
             $lastJoined_id = '';
-            $conn->on('message', function ($msg) use ($conn, &$lastJoined_id, &$tailStarted, $tail, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser) {
+            $conn->on('message', function ($msg) use ($conn, &$lastJoined_id, &$tailStarted, $tail, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth) {
                 $text = $msg instanceof \Ratchet\RFC6455\Messaging\MessageInterface ? (string) $msg : (string) $msg;
+                if (str_starts_with($text, 'api_file_get_contents:')) {
+                    if (!preg_match('/^api_file_get_contents:([^:]+):(.*)$/s', $text, $m)) {
+                        return;
+                    }
+                    $reqId = $m[1];
+                    $meta = json_decode($m[2], true);
+                    if (!is_array($meta) || !isset($meta['path'])) {
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'ok' => false,
+                            'requestedPath' => '',
+                            'header' => null,
+                            'error' => 'invalid payload',
+                            'banner' => '',
+                            'bodyB64' => '',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                        return;
+                    }
+                    $requested = (string) $meta['path'];
+                    $realPath = tail_cli_resolve_allowed_path($tail, $requested);
+                    if ($realPath === null) {
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'ok' => false,
+                            'requestedPath' => $requested,
+                            'header' => ['path' => $requested],
+                            'error' => 'path not allowed or not a file',
+                            'banner' => '',
+                            'bodyB64' => '',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                        return;
+                    }
+                    $maxBytes = 10 * 1024 * 1024;
+                    $st = @stat($realPath);
+                    if ($st === false) {
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'ok' => false,
+                            'requestedPath' => $requested,
+                            'header' => ['path' => $realPath],
+                            'error' => 'stat failed',
+                            'banner' => '',
+                            'bodyB64' => '',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                        return;
+                    }
+                    if ((int) $st['size'] > $maxBytes) {
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'ok' => false,
+                            'requestedPath' => $requested,
+                            'header' => tail_cli_file_header_from_stat($realPath, $st),
+                            'error' => 'file too large (max 10 MiB)',
+                            'banner' => '',
+                            'bodyB64' => '',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                        return;
+                    }
+                    $header = tail_cli_file_header_from_stat($realPath, $st);
+                    $banner = PHP_EOL . '==> ' . $realPath . ' <==' . PHP_EOL;
+                    if ((int) $st['size'] === 0) {
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'ok' => true,
+                            'requestedPath' => $requested,
+                            'header' => $header,
+                            'error' => '',
+                            'banner' => $banner,
+                            'bodyB64' => '',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                        return;
+                    }
+                    $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                        'phase' => 'start',
+                        'ok' => true,
+                        'requestedPath' => $requested,
+                        'header' => $header,
+                        'banner' => $banner,
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                    $stream = $bandwidth->file($realPath);
+                    $sent = 0;
+                    $aborted = false;
+                    $stream->on('data', function ($data) use ($conn, $reqId, $requested, $header, $stream, $maxBytes, &$sent, &$aborted) {
+
+                        if ($aborted) {
+                            return;
+                        }
+                        $len = strlen($data);
+                        if ($sent + $len > $maxBytes) {
+                            $aborted = true;
+                            try {
+                                $stream->close();
+                            } catch (\Throwable $e) {
+                            }
+                            $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                                'phase' => 'error',
+                                'ok' => false,
+                                'requestedPath' => $requested,
+                                'header' => $header,
+                                'error' => 'file too large while streaming (max 10 MiB)',
+                            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                            return;
+                        }
+                        $sent += $len;
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'phase' => 'chunk',
+                            'requestedPath' => $requested,
+                            'bodyB64' => base64_encode($data),
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    });
+                    $stream->on('close', function () use ($conn, $reqId, $requested, &$aborted) {
+                        if ($aborted) {
+                            return;
+                        }
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'phase' => 'done',
+                            'ok' => true,
+                            'requestedPath' => $requested,
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    });
+                    $stream->on('error', function ($error) use ($conn, $reqId, $header, $requested, &$aborted) {
+                        if ($aborted) {
+                            return;
+                        }
+                        $aborted = true;
+                        $msg = $error instanceof \Throwable ? $error->getMessage() : (string) $error;
+                        $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
+                            'phase' => 'error',
+                            'ok' => false,
+                            'requestedPath' => $requested,
+                            'header' => $header,
+                            'error' => $msg,
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    });
+
+                    return;
+                }
+                if (str_starts_with($text, 'api_files:')) {
+                    if (!preg_match('/^api_files:([^:]+):(.*)$/s', $text, $m)) {
+                        return;
+                    }
+                    $reqId = $m[1];
+                    $pathsList = $tail->getWatchedFilePaths();
+                    $out = json_encode(['files' => array_values($pathsList)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $conn->send('api_files_response:' . $reqId . ':' . $out);
+
+                    return;
+                }
                 if (!str_starts_with($text, 'open:')) {
                     return;
                 }
@@ -241,13 +393,13 @@ $tail->on('start', function ($file) use (&$filePath, &$ws) {
     if ($filePath !== $file) {
         $filePath = $file;
         $banner = PHP_EOL . '==> ' . $filePath . ' <==' . PHP_EOL;
-        echo $banner;
+        // echo $banner;
         ($ws['send'])($banner);
     }
 });
 
 $tail->on('data', function ($data) use (&$ws) {
-    echo $data;
+    // echo $data;
     ($ws['send'])($data);
 });
 
@@ -257,6 +409,50 @@ $tail->on('end', function ($file) {
 $connectWs();
 
 Loop::run();
+
+function tail_cli_resolve_allowed_path(TailCliTail $tail, string $requested): ?string
+{
+    $r = realpath($requested);
+    if ($r === false || !is_file($r)) {
+        return null;
+    }
+    foreach ($tail->getWatchedFilePaths() as $w) {
+        $rw = realpath($w);
+        if ($rw !== false && $rw === $r) {
+            return $r;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param array<string, int|string> $st
+ * @return array{path: string, size: int, mtime: int, contentType: string, lastModified: string}
+ */
+function tail_cli_file_header_from_stat(string $realPath, array $st): array
+{
+    $mime = 'text/plain';
+    if (function_exists('finfo_open')) {
+        $fi = finfo_open(FILEINFO_MIME_TYPE);
+        if ($fi !== false) {
+            $m = finfo_file($fi, $realPath);
+            if (is_string($m) && $m !== '') {
+                $mime = $m;
+            }
+            finfo_close($fi);
+        }
+    }
+    $mtime = (int) $st['mtime'];
+
+    return [
+        'path' => $realPath,
+        'size' => (int) $st['size'],
+        'mtime' => $mtime,
+        'contentType' => $mime,
+        'lastModified' => gmdate('D, d M Y H:i:s', $mtime) . ' GMT',
+    ];
+}
 
 function tail_cli_http_origin_from_ws(string $wsUrl): string
 {

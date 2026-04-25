@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>WebSocket 日志</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <style>
     :root {
       --bg: #0f1419;
@@ -83,6 +84,144 @@
       flex-direction: column;
       padding: 12px 16px;
     }
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+    .right-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+    @media (max-width: 900px) {
+      .layout-grid { grid-template-columns: 1fr; }
+    }
+    .files-aside {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      max-height: min(680px, calc(100vh - 140px));
+      overflow: auto;
+    }
+    .files-aside h2 {
+      margin-top: 0;
+    }
+    .fetch-files-btn {
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    .file-tree-panel {
+      font-size: 11px;
+      line-height: 1.45;
+      word-break: break-all;
+      color: var(--text);
+    }
+    .file-tree-panel .hint-li {
+      list-style: none;
+      color: var(--muted);
+      margin: 0;
+      padding: 0;
+    }
+    .file-tree-panel .err-li {
+      list-style: none;
+      color: #f85149;
+      margin: 0;
+      padding: 0;
+    }
+    .file-tree-ul {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 0 0.65rem;
+      border-left: 1px solid var(--border);
+    }
+    .file-tree-ul.root-ul {
+      padding-left: 0;
+      border-left: none;
+    }
+    .file-tree-li {
+      margin: 2px 0 6px;
+    }
+    .file-dir {
+      margin: 0;
+    }
+    .file-dir summary {
+      cursor: pointer;
+      color: var(--warn);
+      user-select: none;
+      list-style: none;
+    }
+    .file-dir summary::-webkit-details-marker { display: none; }
+    .file-dir summary::before {
+      content: '▸ ';
+      display: inline-block;
+      width: 0.9em;
+      color: var(--muted);
+    }
+    .file-dir[open] summary::before {
+      content: '▾ ';
+    }
+    .file-leaf {
+      color: var(--accent);
+    }
+    .file-leaf-click {
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .file-leaf-click:hover {
+      color: #56d364;
+    }
+    #file-preview {
+      max-height: min(340px, 42vh);
+      min-height: 120px;
+      overflow: auto;
+      overscroll-behavior: contain;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .preview-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-meta dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+    }
+    .preview-meta dt { color: var(--warn); }
+    .preview-meta dd { margin: 0; }
+    .preview-err { color: #f85149; }
+    .preview-wait { color: var(--muted); }
+    .preview-banner {
+      color: var(--warn);
+      margin-bottom: 6px;
+    }
+    .preview-body {
+      margin: 0;
+      font-family: inherit;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    h2 .preview-sub {
+      font-weight: 400;
+      color: var(--muted);
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 11px;
+    }
     h2 {
       margin: 0 0 8px;
       font-size: 12px;
@@ -92,8 +231,9 @@
       letter-spacing: 0.06em;
     }
     #log {
-      height: min(680px, calc(100vh - 140px));
-      min-height: 280px;
+      flex: 1 1 auto;
+      height: min(420px, calc(100vh - 380px));
+      min-height: 200px;
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
@@ -114,259 +254,851 @@
   </style>
 </head>
 <body>
-  <header>
-    <label>token <input id="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
-    <label>groupId <input id="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
-    <label>WS 路径 <input id="wsPath" type="text" value="/" title="握手路径" /></label>
-    <label>过滤 <input id="filterKeyword" type="search" autocomplete="off" placeholder="路径或行内容，空=全部" title="匹配 tail 横幅中的路径或正文行（不区分大小写）" /></label>
-    <button type="button" id="connectBtn">连接</button>
-    <button type="button" id="disconnectBtn" class="danger" disabled>断开</button>
-    <button type="button" id="bindBtn" class="secondary">绑定</button>
-    <button type="button" id="clearBtn">清空日志</button>
-    <span id="status">未连接</span>
-  </header>
-  <main>
-    <h2>组播日志（非 open: 消息）</h2>
-    <div id="log"></div>
-    <p class="hint">
-      打开示例：<code>?token=…&amp;groupId=group1</code>。
-      收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
-      日志流形如 <code>==> /path/to.log &lt;==</code> 时，填写「过滤」可只显示路径或行文中包含该关键词的横幅与内容（新消息生效）。
-    </p>
-  </main>
+  <div id="app">
+    <header>
+      <label>token <input v-model="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
+      <label>groupId <input v-model="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
+      <label>WS 路径 <input v-model="wsPath" type="text" title="握手路径" /></label>
+      <label>过滤 <input v-model="filterKeyword" type="search" autocomplete="off" placeholder="路径或行内容，空=全部" title="匹配 tail 横幅中的路径或正文行（不区分大小写）" /></label>
+      <button type="button" @click="connect">连接</button>
+      <button type="button" class="danger" :disabled="!canDisconnect" @click="disconnect">断开</button>
+      <button type="button" class="secondary" @click="bindGroup">绑定</button>
+      <button type="button" @click="clearLog">清空日志</button>
+      <span id="status" :class="statusClass">{{ statusText }}</span>
+    </header>
+    <main>
+      <div class="layout-grid">
+        <aside class="files-aside">
+          <h2>Tail 采集文件</h2>
+          <button type="button" class="secondary fetch-files-btn" :disabled="fetchFilesBusy" @click="fetchApiFiles">获取文件</button>
+          <div class="file-tree-panel">
+            <p v-if="filePanelHint" class="hint-li">{{ filePanelHint }}</p>
+            <p v-else-if="filePanelError" class="err-li">{{ filePanelError }}</p>
+            <file-tree-node v-else-if="fileTreeRoot.children.length" :node="fileTreeRoot" :is-root="true" :pick-file="openFilePreview" />
+          </div>
+        </aside>
+        <div class="right-stack">
+          <div class="preview-column">
+            <h2>文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span></h2>
+            <div id="file-preview" ref="previewEl" @scroll.passive="onPreviewScroll">
+              <p v-if="previewWaiting" class="preview-wait">正在通过 tail-cli 流式读取…</p>
+              <p v-if="previewError" class="preview-err">{{ previewError }}</p>
+              <div v-if="previewHeader" class="preview-meta">
+                <dl>
+                  <dt>Content-Type</dt><dd>{{ previewHeader.contentType }}</dd>
+                  <dt>Size</dt><dd>{{ formatBytes(previewHeader.size) }}</dd>
+                  <dt>Last-Modified</dt><dd>{{ previewHeader.lastModified }}</dd>
+                  <dt>Path</dt><dd>{{ previewHeader.path }}</dd>
+                </dl>
+              </div>
+              <template v-if="!previewError && previewHeader">
+                <div v-if="previewBanner" class="preview-banner">{{ previewBanner }}</div>
+                <pre class="preview-body">{{ previewBodyText }}</pre>
+              </template>
+              <p v-if="!previewWaiting && !previewError && !previewHeader && !selectedFilePath" class="preview-wait">点击左侧树中的文件路径查看内容（≤10 MiB）</p>
+            </div>
+          </div>
+          <div class="log-column">
+            <h2>组播日志（非 open: 消息）</h2>
+            <div id="log" ref="logEl">
+              <div v-for="(line, i) in logLines" :key="i">{{ line }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="hint">
+        打开示例：<code>?token=…&amp;groupId=group1</code>。
+        收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
+        左侧 <strong>获取文件</strong> 请求 <code>GET /api/files?_id=…</code>；点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
+        日志流形如 <code>==> /path/to.log &lt;==</code> 时，填写「过滤」可只显示路径或行文中包含该关键词的横幅与内容（新消息生效）。
+      </p>
+    </main>
+  </div>
+
   <script>
 (function () {
-  const qs = new URLSearchParams(location.search);
-  const logEl = document.getElementById('log');
-  const statusEl = document.getElementById('status');
-  const tokenEl = document.getElementById('token');
-  const groupIdEl = document.getElementById('groupId');
-  const wsPathEl = document.getElementById('wsPath');
-  const filterEl = document.getElementById('filterKeyword');
-  const connectBtn = document.getElementById('connectBtn');
-  const disconnectBtn = document.getElementById('disconnectBtn');
-  const bindBtn = document.getElementById('bindBtn');
-  const clearBtn = document.getElementById('clearBtn');
+  const { createApp, ref, computed, watch, nextTick, onMounted, onUnmounted } = Vue;
 
-  if (qs.get('token') != null) tokenEl.value = qs.get('token');
-  if (qs.get('groupId') != null) groupIdEl.value = qs.get('groupId');
-  if (qs.get('wsPath') != null) wsPathEl.value = qs.get('wsPath');
-  if (qs.get('filter') != null) filterEl.value = qs.get('filter');
+  function normalizePath(p) {
+    return String(p).replace(/\\/g, '/').replace(/\/{2,}/g, '/').trim();
+  }
 
-  let sock = null;
-  /** 每次发起连接递增，用于忽略已被取代的旧 socket 的 onclose，避免误触发重连 */
-  let connectGen = 0;
-  let reconnectTimer = null;
-  /** 用户点击「断开」后为 true，意外断线则为 false，便于仅后者自动重连 */
-  let manualDisconnect = false;
-  /** 当前 tail 文件段是否命中过滤：由最近一条 ==> path <== 横幅更新 */
-  let logSectionMatches = false;
-  /** 当前连接在服务端对应的 _id（来自最近一次 open:） */
-  let lastConnId = '';
-  /** 本段 WebSocket 连接上是否已做过一次「自动绑定」尝试（避免 ping 等再次 open: 重复自动请求） */
-  let autoBindDone = false;
-  let hintedNeedBind = false;
-
-  function clearReconnectTimer() {
-    if (reconnectTimer !== null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+  function b64ToUint8Array(b64) {
+    const bin = atob(b64);
+    const u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      u[i] = bin.charCodeAt(i);
     }
+    return u;
   }
 
-  /** 是否在底部附近：是则新日志自动滚到底；用户往上滑则不滚 */
-  function isLogPinnedToBottom() {
-    const threshold = 12;
-    return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight <= threshold;
-  }
-
-  function logLine(text) {
-    const pin = isLogPinnedToBottom();
-    const line = document.createElement('div');
-    line.textContent = text;
-    logEl.appendChild(line);
-    if (pin) {
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-  }
-
-  function setStatus(text, cls) {
-    statusEl.textContent = text;
-    statusEl.className = cls || '';
-  }
-
-  function wsUrl() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let path = wsPathEl.value.trim() || '/';
-    if (!path.startsWith('/')) path = '/' + path;
-    return proto + '//' + location.host + path;
-  }
-
-  /** 自动入组：token 与 groupId 均填写时，收到 open: 即 POST joinGroupBy_Id */
-  function hasAutoBindParams() {
-    return tokenEl.value.trim() !== '' && groupIdEl.value.trim() !== '';
-  }
-
-  /** 手动入组：至少 groupId（token 可空，适配未设置 TOKEN 的服务端） */
-  function hasManualBindParams() {
-    return groupIdEl.value.trim() !== '';
-  }
-
-  async function postJoinGroupBy_Id(_id) {
-    const token = tokenEl.value.trim();
-    const groupId = groupIdEl.value.trim();
-    if (!groupId) {
-      logLine('[POST] 请填写 groupId');
-      return;
-    }
-    const body = {
-      token: token,
-      event: 'joinGroupBy_Id',
-      joinGroupBy_Id: { groupId: groupId, _id: _id },
-    };
+  function b64ToUtf8(b64) {
     try {
-      const res = await fetch(location.origin + '/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const j = await res.json().catch(function () { return { raw: true }; });
-      logLine('[POST] joinGroupBy_Id → ' + res.status + ' ' + JSON.stringify(j));
+      return new TextDecoder('utf-8', { fatal: false }).decode(b64ToUint8Array(b64));
     } catch (e) {
-      logLine('[POST] 失败: ' + e.message);
+      return '(正文 Base64 解码失败: ' + e.message + ')';
     }
   }
 
-  function emitTailLogChunk(msg) {
-    const kwRaw = filterEl.value.trim();
-    if (!kwRaw) {
-      logLine(msg);
-      return;
+  /** 1024 进制，B / KiB / MiB … */
+  function formatBytes(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n < 0) {
+      return '—';
     }
-    const kw = kwRaw.toLowerCase();
-    const lines = msg.split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const forBanner = line.replace(/\r$/, '').trim();
-      const bannerMatch = forBanner.match(/^==>\s*(.+?)\s*<==$/);
-      if (bannerMatch) {
-        const path = bannerMatch[1];
-        const hit = path.toLowerCase().includes(kw) || forBanner.toLowerCase().includes(kw);
-        logSectionMatches = hit;
-        if (hit) logLine(line);
+    if (n === 0) {
+      return '0 B';
+    }
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    let i = 0;
+    let v = n;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    if (i === 0) {
+      return n + ' B';
+    }
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+    const s = parseFloat(v.toFixed(decimals));
+
+    return s + ' ' + units[i];
+  }
+
+  function pathSegments(fullPath) {
+    const n = normalizePath(fullPath);
+    if (!n) {
+      return [];
+    }
+    const parts = n.split('/');
+    return parts.filter(function (s) {
+      return s.length > 0;
+    });
+  }
+
+  /**
+   * Trie：同一路径既可作为文件又作为前缀（如 /a/b 与 /a/b/c）时，目录内额外挂一条「本体」叶子。
+   * @param {string[]} paths
+   * @returns {{ isLeaf: boolean, label: string, path: string|null, children: any[] }}
+   */
+  function buildFileTree(paths) {
+    const uniq = Array.from(new Set(paths.map(normalizePath).filter(Boolean))).sort();
+    const rootTrie = { segments: new Map(), terminal: null };
+
+    for (let i = 0; i < uniq.length; i++) {
+      const full = uniq[i];
+      const parts = pathSegments(full);
+      if (parts.length === 0) {
         continue;
       }
-      if (logSectionMatches || line.toLowerCase().includes(kw)) {
-        logLine(line);
+      let cur = rootTrie;
+      for (let j = 0; j < parts.length; j++) {
+        const seg = parts[j];
+        const last = j === parts.length - 1;
+        if (!cur.segments.has(seg)) {
+          cur.segments.set(seg, { segments: new Map(), terminal: null });
+        }
+        const n = cur.segments.get(seg);
+        if (last) {
+          n.terminal = full;
+        }
+        cur = n;
       }
     }
+
+    const viewRoot = { isLeaf: false, label: '', path: null, children: [] };
+
+    function trieToView(trieNode, outChildren) {
+      const entries = Array.from(trieNode.segments.entries()).sort(function (a, b) {
+        return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
+      });
+      for (let i = 0; i < entries.length; i++) {
+        const seg = entries[i][0];
+        const n = entries[i][1];
+        const hasKids = n.segments.size > 0;
+        const hasFile = n.terminal !== null;
+        if (hasKids) {
+          const dirNode = { isLeaf: false, label: seg, path: null, children: [] };
+          if (hasFile) {
+            dirNode.children.push({
+              isLeaf: true,
+              label: '·',
+              path: n.terminal,
+              children: [],
+            });
+          }
+          trieToView(n, dirNode.children);
+          sortViewChildren(dirNode.children);
+          outChildren.push(dirNode);
+        } else if (hasFile) {
+          outChildren.push({
+            isLeaf: true,
+            label: seg,
+            path: n.terminal,
+            children: [],
+          });
+        }
+      }
+    }
+
+    function sortViewChildren(children) {
+      children.sort(function (a, b) {
+        if (a.isLeaf !== b.isLeaf) {
+          return a.isLeaf ? 1 : -1;
+        }
+        return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+      });
+      for (let i = 0; i < children.length; i++) {
+        if (!children[i].isLeaf) {
+          sortViewChildren(children[i].children);
+        }
+      }
+    }
+
+    trieToView(rootTrie, viewRoot.children);
+    sortViewChildren(viewRoot.children);
+    return viewRoot;
   }
 
-  function onMessage(ev) {
-    const msg = typeof ev.data === 'string' ? ev.data : '';
-    if (msg.startsWith('open:')) {
-      const _id = msg.slice(5);
-      if (_id) {
-        lastConnId = _id;
-      }
-      if (_id && hasAutoBindParams() && !autoBindDone) {
-        autoBindDone = true;
-        postJoinGroupBy_Id(_id);
-      } else if (_id && !hasAutoBindParams() && !hintedNeedBind) {
-        hintedNeedBind = true;
-        logLine('[提示] 已拿到连接 _id。自动入组请填齐 token、groupId；否则填好 groupId（及必要时 token）后点「绑定」');
-      }
-      return;
+  function fileNodeKey(c) {
+    if (c.isLeaf) {
+      return 'f:' + c.path;
     }
-    emitTailLogChunk(msg);
+    return 'd:' + c.label + ':' + c.children.length;
   }
 
-  function beginConnection() {
-    connectGen += 1;
-    const gen = connectGen;
-    lastConnId = '';
-    autoBindDone = false;
-    hintedNeedBind = false;
-    logSectionMatches = false;
-    if (sock) {
-      try { sock.close(); } catch (e) {}
-    }
-    setStatus('连接中…', '');
-    connectBtn.disabled = true;
-    disconnectBtn.disabled = true;
-    const ws = new WebSocket(wsUrl());
-    sock = ws;
-    ws.onopen = function () {
-      if (sock !== ws) return;
-      setStatus('已连接', 'ok');
-      connectBtn.disabled = false;
-      disconnectBtn.disabled = false;
-    };
-    ws.onmessage = onMessage;
-    ws.onerror = function () {
-      if (sock !== ws) return;
-      setStatus('错误', 'err');
-    };
-    ws.onclose = function () {
-      if (sock !== ws) return;
-      lastConnId = '';
-      autoBindDone = false;
-      hintedNeedBind = false;
-      connectBtn.disabled = false;
-      disconnectBtn.disabled = true;
-      sock = null;
-      if (gen !== connectGen) {
-        return;
+  const FileTreeNode = {
+    name: 'FileTreeNode',
+    props: {
+      node: { type: Object, required: true },
+      isRoot: { type: Boolean, default: false },
+      pickFile: { type: Function, required: true },
+    },
+    methods: { fileNodeKey: fileNodeKey },
+    template: `
+      <ul :class="['file-tree-ul', { 'root-ul': isRoot }]">
+        <li v-for="c in node.children" :key="fileNodeKey(c)" class="file-tree-li">
+          <span v-if="c.isLeaf" class="file-leaf file-leaf-click" :title="c.path" @click.stop="pickFile(c.path)">{{ c.label }}</span>
+          <details v-else class="file-dir" open>
+            <summary><span class="dir-name">{{ c.label }}</span></summary>
+            <file-tree-node :node="c" :is-root="false" :pick-file="pickFile" />
+          </details>
+        </li>
+      </ul>
+    `,
+  };
+
+  createApp({
+    components: { FileTreeNode: FileTreeNode },
+    setup() {
+      const qs = new URLSearchParams(location.search);
+
+      const token = ref(qs.get('token') || '');
+      const groupId = ref(qs.get('groupId') || '');
+      const wsPath = ref(qs.get('wsPath') || '/');
+      const filterKeyword = ref(qs.get('filter') || '');
+
+      const statusText = ref('未连接');
+      const statusClass = ref('');
+      const logLines = ref([]);
+      const logEl = ref(null);
+      const previewEl = ref(null);
+
+      const sock = ref(null);
+      const connectGen = ref(0);
+      let reconnectTimer = null;
+      const manualDisconnect = ref(false);
+
+      const logSectionMatches = ref(false);
+      const lastConnId = ref('');
+      /** @type {import('vue').Ref<Set<string>|null>} */
+      const cliFilesSet = ref(null);
+      const fileListError = ref('');
+      const fetchFilesBusy = ref(false);
+
+      const autoBindDone = ref(false);
+      const hintedNeedBind = ref(false);
+
+      /** @type {{ decoder: TextDecoder, acc: string } | null} */
+      let filePreviewStream = null;
+
+      const selectedFilePath = ref('');
+      const previewWaiting = ref(false);
+      const previewError = ref('');
+      /** @type {import('vue').Ref<Record<string, unknown>|null>} */
+      const previewHeader = ref(null);
+      const previewBanner = ref('');
+      const previewBodyText = ref('');
+      /** 用户是否保持在预览区底部（滚离底部后为 false，与组播日志贴底逻辑一致） */
+      const previewStickBottom = ref(true);
+
+      const canDisconnect = computed(function () {
+        return sock.value !== null;
+      });
+
+      function onPreviewScroll(ev) {
+        const el = ev.target;
+        if (!el || el !== previewEl.value) {
+          return;
+        }
+        const threshold = 48;
+        previewStickBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
       }
-      if (manualDisconnect) {
-        setStatus('已断开', 'err');
-        return;
+
+      function scrollPreviewToBottomIfStuck() {
+        nextTick(function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              const e = previewEl.value;
+              if (e && previewStickBottom.value) {
+                e.scrollTop = e.scrollHeight;
+              }
+            });
+          });
+        });
       }
-      setStatus('已断开，1 秒后重连…', 'err');
-      clearReconnectTimer();
-      reconnectTimer = setTimeout(function () {
-        reconnectTimer = null;
-        if (gen !== connectGen || manualDisconnect) return;
+
+      watch(
+        [
+          previewBodyText,
+          previewBanner,
+          previewHeader,
+          previewWaiting,
+          previewError,
+          selectedFilePath,
+        ],
+        function () {
+          scrollPreviewToBottomIfStuck();
+        }
+      );
+
+      const fileTreeRoot = computed(function () {
+        if (!cliFilesSet.value || cliFilesSet.value.size === 0) {
+          return { isLeaf: false, label: '', path: null, children: [] };
+        }
+        return buildFileTree(Array.from(cliFilesSet.value));
+      });
+
+      const filePanelHint = computed(function () {
+        if (fileListError.value) {
+          return '';
+        }
+        if (cliFilesSet.value === null) {
+          return '点击「获取文件」后在此显示 tail 监视路径（需已连接且 tail-cli 在 cliGroup）';
+        }
+        if (cliFilesSet.value.size === 0) {
+          return '已请求，等待 WebSocket api_files_response 推送…';
+        }
+        return '';
+      });
+
+      const filePanelError = computed(function () {
+        return fileListError.value;
+      });
+
+      function clearReconnectTimer() {
+        if (reconnectTimer !== null) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+      }
+
+      function isLogPinnedToBottom() {
+        const el = logEl.value;
+        if (!el) {
+          return true;
+        }
+        const threshold = 12;
+        return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+      }
+
+      function appendLog(text) {
+        const pin = isLogPinnedToBottom();
+        logLines.value = logLines.value.concat([text]);
+        if (pin) {
+          nextTick(function () {
+            const el = logEl.value;
+            if (el) {
+              el.scrollTop = el.scrollHeight;
+            }
+          });
+        }
+      }
+
+      function setStatus(text, cls) {
+        statusText.value = text;
+        statusClass.value = cls || '';
+      }
+
+      function resetFilePanelForDisconnect() {
+        cliFilesSet.value = null;
+        fileListError.value = '';
+      }
+
+      function resetFilePreview() {
+        filePreviewStream = null;
+        previewStickBottom.value = true;
+        selectedFilePath.value = '';
+        previewWaiting.value = false;
+        previewError.value = '';
+        previewHeader.value = null;
+        previewBanner.value = '';
+        previewBodyText.value = '';
+      }
+
+      function applyFileGetContentsPayload(jsonStr) {
+        let data;
+        try {
+          data = JSON.parse(jsonStr);
+        } catch (e) {
+          previewWaiting.value = false;
+          previewError.value = '解析 JSON 失败: ' + e.message;
+          filePreviewStream = null;
+          return;
+        }
+
+        function pathMatches(dataReq) {
+          const req = typeof dataReq === 'string' ? dataReq : '';
+          if (!req) {
+            return true;
+          }
+          return normalizePath(req) === normalizePath(selectedFilePath.value);
+        }
+
+        const phase = data.phase;
+
+        if (phase === 'start') {
+          if (!pathMatches(data.requestedPath)) {
+            return;
+          }
+          previewError.value = '';
+          previewHeader.value = data.header && typeof data.header === 'object' ? data.header : null;
+          previewBanner.value = typeof data.banner === 'string' ? data.banner : '';
+          previewBodyText.value = '';
+          previewWaiting.value = true;
+          filePreviewStream = {
+            decoder: new TextDecoder('utf-8', { fatal: false }),
+            acc: '',
+          };
+          return;
+        }
+
+        if (phase === 'chunk') {
+          if (!pathMatches(data.requestedPath)) {
+            return;
+          }
+          if (!filePreviewStream) {
+            return;
+          }
+          const b64 = typeof data.bodyB64 === 'string' ? data.bodyB64 : '';
+          if (b64.length === 0) {
+            return;
+          }
+          try {
+            const u8 = b64ToUint8Array(b64);
+            filePreviewStream.acc += filePreviewStream.decoder.decode(u8, { stream: true });
+            previewBodyText.value = filePreviewStream.acc;
+          } catch (e) {
+            filePreviewStream = null;
+            previewWaiting.value = false;
+            previewError.value = '分块解码失败: ' + e.message;
+          }
+          return;
+        }
+
+        if (phase === 'done') {
+          if (!pathMatches(data.requestedPath)) {
+            return;
+          }
+          if (filePreviewStream) {
+            filePreviewStream.acc += filePreviewStream.decoder.decode();
+            previewBodyText.value = filePreviewStream.acc;
+            filePreviewStream = null;
+          }
+          previewWaiting.value = false;
+          return;
+        }
+
+        if (phase === 'error') {
+          if (data.requestedPath && !pathMatches(data.requestedPath)) {
+            return;
+          }
+          filePreviewStream = null;
+          previewWaiting.value = false;
+          previewError.value = data.error ? String(data.error) : '读取失败';
+          if (data.header && typeof data.header === 'object') {
+            previewHeader.value = data.header;
+          }
+          previewBanner.value = '';
+          previewBodyText.value = '';
+          return;
+        }
+
+        const req = typeof data.requestedPath === 'string' ? data.requestedPath : '';
+        if (req && normalizePath(req) !== normalizePath(selectedFilePath.value)) {
+          return;
+        }
+        previewWaiting.value = false;
+        filePreviewStream = null;
+        if (!data.ok) {
+          previewError.value = data.error ? String(data.error) : '读取失败';
+          previewHeader.value = data.header && typeof data.header === 'object' ? data.header : null;
+          previewBanner.value = '';
+          previewBodyText.value = '';
+          return;
+        }
+        previewError.value = '';
+        previewHeader.value = data.header && typeof data.header === 'object' ? data.header : null;
+        previewBanner.value = typeof data.banner === 'string' ? data.banner : '';
+        const b64 = typeof data.bodyB64 === 'string' ? data.bodyB64 : '';
+        previewBodyText.value = b64ToUtf8(b64);
+      }
+
+      async function openFilePreview(filePath) {
+        if (!filePath) {
+          return;
+        }
+        if (!lastConnId.value) {
+          appendLog('[文件] 请先连接 WebSocket 并等待 open:');
+          return;
+        }
+        filePreviewStream = null;
+        previewStickBottom.value = true;
+        selectedFilePath.value = filePath;
+        previewWaiting.value = true;
+        previewError.value = '';
+        previewHeader.value = null;
+        previewBanner.value = '';
+        previewBodyText.value = '';
+        try {
+          const u = new URL(location.origin + '/api/file_get_contents');
+          u.searchParams.set('_id', lastConnId.value);
+          u.searchParams.set('path', filePath);
+          const res = await fetch(u.toString());
+          const text = await res.text();
+          if (!res.ok) {
+            previewWaiting.value = false;
+            let msg = 'HTTP ' + res.status;
+            try {
+              const j = JSON.parse(text);
+              if (j.msg) {
+                msg = String(j.msg);
+              }
+            } catch (e2) {
+              if (text) {
+                msg = text;
+              }
+            }
+            previewError.value = msg;
+          }
+        } catch (e) {
+          previewWaiting.value = false;
+          previewError.value = e.message;
+        }
+      }
+
+      function wsUrl() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let path = wsPath.value.trim() || '/';
+        if (!path.startsWith('/')) {
+          path = '/' + path;
+        }
+        return proto + '//' + location.host + path;
+      }
+
+      function hasAutoBindParams() {
+        return token.value.trim() !== '' && groupId.value.trim() !== '';
+      }
+
+      function hasManualBindParams() {
+        return groupId.value.trim() !== '';
+      }
+
+      async function postJoinGroupBy_Id(_id) {
+        const tok = token.value.trim();
+        const gid = groupId.value.trim();
+        if (!gid) {
+          appendLog('[POST] 请填写 groupId');
+          return;
+        }
+        const body = {
+          token: tok,
+          event: 'joinGroupBy_Id',
+          joinGroupBy_Id: { groupId: gid, _id: _id },
+        };
+        try {
+          const res = await fetch(location.origin + '/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const j = await res.json().catch(function () {
+            return { raw: true };
+          });
+          appendLog('[POST] joinGroupBy_Id → ' + res.status + ' ' + JSON.stringify(j));
+        } catch (e) {
+          appendLog('[POST] 失败: ' + e.message);
+        }
+      }
+
+      function emitTailLogChunk(msg) {
+        const kwRaw = filterKeyword.value.trim();
+        if (!kwRaw) {
+          appendLog(msg);
+          return;
+        }
+        const kw = kwRaw.toLowerCase();
+        const lines = msg.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const forBanner = line.replace(/\r$/, '').trim();
+          const bannerMatch = forBanner.match(/^==>\s*(.+?)\s*<==$/);
+          if (bannerMatch) {
+            const path = bannerMatch[1];
+            const hit = path.toLowerCase().includes(kw) || forBanner.toLowerCase().includes(kw);
+            logSectionMatches.value = hit;
+            if (hit) {
+              appendLog(line);
+            }
+            continue;
+          }
+          if (logSectionMatches.value || line.toLowerCase().includes(kw)) {
+            appendLog(line);
+          }
+        }
+      }
+
+      function onWsMessage(ev) {
+        const msg = typeof ev.data === 'string' ? ev.data : '';
+        if (msg.startsWith('api_file_get_contents_response:')) {
+          applyFileGetContentsPayload(msg.slice('api_file_get_contents_response:'.length));
+          return;
+        }
+        if (msg.startsWith('api_files_response:')) {
+          if (cliFilesSet.value === null) {
+            return;
+          }
+          fileListError.value = '';
+          const payload = msg.slice('api_files_response:'.length);
+          try {
+            const data = JSON.parse(payload);
+            const files = Array.isArray(data.files) ? data.files : [];
+            const set = cliFilesSet.value;
+            for (let i = 0; i < files.length; i++) {
+              const p = files[i];
+              if (typeof p === 'string') {
+                set.add(p);
+              }
+            }
+            cliFilesSet.value = new Set(set);
+          } catch (e) {
+            fileListError.value = '解析 api_files_response 失败: ' + e.message;
+          }
+          return;
+        }
+        if (msg.startsWith('open:')) {
+          const _id = msg.slice(5);
+          if (_id) {
+            lastConnId.value = _id;
+          }
+          if (_id && hasAutoBindParams() && !autoBindDone.value) {
+            autoBindDone.value = true;
+            postJoinGroupBy_Id(_id);
+          } else if (_id && !hasAutoBindParams() && !hintedNeedBind.value) {
+            hintedNeedBind.value = true;
+            appendLog('[提示] 已拿到连接 _id。自动入组请填齐 token、groupId；否则填好 groupId（及必要时 token）后点「绑定」');
+          }
+          return;
+        }
+        emitTailLogChunk(msg);
+      }
+
+      function beginConnection() {
+        connectGen.value += 1;
+        const gen = connectGen.value;
+        lastConnId.value = '';
+        resetFilePanelForDisconnect();
+        resetFilePreview();
+        autoBindDone.value = false;
+        hintedNeedBind.value = false;
+        logSectionMatches.value = false;
+        if (sock.value) {
+          try {
+            sock.value.close();
+          } catch (e) {}
+        }
+        setStatus('连接中…', '');
+        const ws = new WebSocket(wsUrl());
+        sock.value = ws;
+        ws.onopen = function () {
+          if (sock.value !== ws) {
+            return;
+          }
+          setStatus('已连接', 'ok');
+        };
+        ws.onmessage = onWsMessage;
+        ws.onerror = function () {
+          if (sock.value !== ws) {
+            return;
+          }
+          setStatus('错误', 'err');
+        };
+        ws.onclose = function () {
+          if (sock.value !== ws) {
+            return;
+          }
+          lastConnId.value = '';
+          resetFilePanelForDisconnect();
+          resetFilePreview();
+          autoBindDone.value = false;
+          hintedNeedBind.value = false;
+          sock.value = null;
+          if (gen !== connectGen.value) {
+            return;
+          }
+          if (manualDisconnect.value) {
+            setStatus('已断开', 'err');
+            return;
+          }
+          setStatus('已断开，1 秒后重连…', 'err');
+          clearReconnectTimer();
+          reconnectTimer = setTimeout(function () {
+            reconnectTimer = null;
+            if (gen !== connectGen.value || manualDisconnect.value) {
+              return;
+            }
+            beginConnection();
+          }, 1000);
+        };
+      }
+
+      function connect() {
+        manualDisconnect.value = false;
+        clearReconnectTimer();
         beginConnection();
-      }, 1000);
-    };
-  }
+      }
 
-  function connect() {
-    manualDisconnect = false;
-    clearReconnectTimer();
-    beginConnection();
-  }
+      function disconnect() {
+        manualDisconnect.value = true;
+        clearReconnectTimer();
+        const s = sock.value;
+        if (!s) {
+          return;
+        }
+        if (s.readyState === WebSocket.CLOSING || s.readyState === WebSocket.CLOSED) {
+          return;
+        }
+        try {
+          s.close();
+        } catch (e) {}
+      }
 
-  function disconnect() {
-    manualDisconnect = true;
-    clearReconnectTimer();
-    if (!sock) return;
-    if (sock.readyState === WebSocket.CLOSING || sock.readyState === WebSocket.CLOSED) return;
-    disconnectBtn.disabled = true;
-    try { sock.close(); } catch (e) {}
-  }
+      function bindGroup() {
+        if (!sock.value || sock.value.readyState !== WebSocket.OPEN) {
+          appendLog('[绑定] 请先点击「连接」并保持 WebSocket 已连接');
+          return;
+        }
+        if (!lastConnId.value) {
+          appendLog('[绑定] 尚未收到 open:，请稍候再试');
+          return;
+        }
+        if (!hasManualBindParams()) {
+          appendLog('[绑定] 请填写 groupId（若服务端校验 token 也需填写）');
+          return;
+        }
+        postJoinGroupBy_Id(lastConnId.value);
+      }
 
-  connectBtn.addEventListener('click', connect);
-  disconnectBtn.addEventListener('click', disconnect);
-  bindBtn.addEventListener('click', function () {
-    if (!sock || sock.readyState !== WebSocket.OPEN) {
-      logLine('[绑定] 请先点击「连接」并保持 WebSocket 已连接');
-      return;
-    }
-    if (!lastConnId) {
-      logLine('[绑定] 尚未收到 open:，请稍候再试');
-      return;
-    }
-    if (!hasManualBindParams()) {
-      logLine('[绑定] 请填写 groupId（若服务端校验 token 也需填写）');
-      return;
-    }
-    postJoinGroupBy_Id(lastConnId);
-  });
-  clearBtn.addEventListener('click', function () { logEl.textContent = ''; });
+      function clearLog() {
+        logLines.value = [];
+      }
 
-  connect();
+      async function fetchApiFiles() {
+        if (!lastConnId.value) {
+          appendLog('[获取文件] 请先连接 WebSocket 并等待 open: 拿到 _id');
+          return;
+        }
+        fetchFilesBusy.value = true;
+        fileListError.value = '';
+        cliFilesSet.value = new Set();
+        try {
+          const res = await fetch(location.origin + '/api/files?_id=' + encodeURIComponent(lastConnId.value));
+          const text = await res.text();
+          if (!res.ok) {
+            cliFilesSet.value = null;
+            let msg = 'HTTP ' + res.status;
+            try {
+              const j = JSON.parse(text);
+              if (j.msg) {
+                msg = String(j.msg);
+              }
+            } catch (e2) {
+              if (text) {
+                msg = text;
+              }
+            }
+            fileListError.value = msg;
+            return;
+          }
+          try {
+            JSON.parse(text);
+          } catch (e3) {
+            /* ignore */
+          }
+        } catch (e) {
+          cliFilesSet.value = null;
+          fileListError.value = e.message;
+        } finally {
+          fetchFilesBusy.value = false;
+        }
+      }
+
+      onMounted(function () {
+        connect();
+      });
+
+      onUnmounted(function () {
+        manualDisconnect.value = true;
+        clearReconnectTimer();
+        if (sock.value) {
+          try {
+            sock.value.close();
+          } catch (e) {}
+        }
+      });
+
+      return {
+        token,
+        groupId,
+        wsPath,
+        filterKeyword,
+        statusText,
+        statusClass,
+        logLines,
+        logEl,
+        previewEl,
+        canDisconnect,
+        fetchFilesBusy,
+        fileTreeRoot,
+        filePanelHint,
+        filePanelError,
+        connect,
+        disconnect,
+        bindGroup,
+        clearLog,
+        fetchApiFiles,
+        openFilePreview,
+        selectedFilePath,
+        previewWaiting,
+        previewError,
+        previewHeader,
+        previewBanner,
+        previewBodyText,
+        formatBytes,
+        onPreviewScroll,
+      };
+    },
+  }).mount('#app');
 })();
   </script>
 </body>

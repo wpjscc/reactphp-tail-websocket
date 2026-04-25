@@ -14,15 +14,12 @@ $listen = $argv[2];
 $cliGroup = $argv[3];
 
 use React\EventLoop\Loop;
-use React\Promise\Deferred;
 use ReactphpX\WebsocketGroup\WebsocketGroupComponent;
 use ReactphpX\WebsocketGroup\WebsocketGroupMiddleware;
 use ReactphpX\ConnectionGroup\ConnectionGroup;
 use ReactphpX\ConnectionGroup\SingleConnectionGroup;
 use React\Http\Message\Response;
 use ReactphpX\WebsocketMiddleware\WebsocketMiddleware;
-use ReactphpX\TunnelStream\TunnelStream;
-use WyriHaximus\React\Stream\Json\JsonStream;
 
 $connectionGroup = SingleConnectionGroup::instance();
 // $connectionGroup = new ConnectionGroup;
@@ -32,11 +29,36 @@ $connectionGroup->on('open', function ($conn, $request) use ($connectionGroup) {
 });
 
 $connectionGroup->on('message', function ($from, $msg) use ($connectionGroup, $group) {
-    if ($msg == 'ping') {
+    if ($msg === 'ping') {
         $connectionGroup->sendMessageTo_id($from->_id, 'open:' . $from->_id);
-    } else {
-        $connectionGroup->sendToGroup($group, base64_decode($msg), [], [$from->_id]);
+
+        return;
     }
+    if (str_starts_with($msg, 'api_files_response:')) {
+        $rest = substr($msg, strlen('api_files_response:'));
+        $colon = strpos($rest, ':');
+        if ($colon === false) {
+            return;
+        }
+        $targetId = substr($rest, 0, $colon);
+        $jsonBody = substr($rest, $colon + 1);
+        $connectionGroup->sendMessageTo_Id($targetId, 'api_files_response:' . $jsonBody);
+
+        return;
+    }
+    if (str_starts_with($msg, 'api_file_get_contents_response:')) {
+        $rest = substr($msg, strlen('api_file_get_contents_response:'));
+        $colon = strpos($rest, ':');
+        if ($colon === false) {
+            return;
+        }
+        $targetId = substr($rest, 0, $colon);
+        $jsonBody = substr($rest, $colon + 1);
+        $connectionGroup->sendMessageTo_Id($targetId, 'api_file_get_contents_response:' . $jsonBody);
+
+        return;
+    }
+    $connectionGroup->sendToGroup($group, base64_decode($msg), [], [$from->_id]);
 });
 
 $connectionGroup->on('close', function ($conn, $reason) {
@@ -81,8 +103,57 @@ function getMemoryUsage(): array {
 
 
 $http = new React\Http\HttpServer(
-    function (\Psr\Http\Message\ServerRequestInterface $request, callable $next) {
+    function (\Psr\Http\Message\ServerRequestInterface $request, callable $next) use ($connectionGroup, $cliGroup) {
         $path = $request->getUri()->getPath();
+        if ($request->getMethod() === 'GET' && trim($path, '/') === 'api/files') {
+            $query = $request->getQueryParams();
+            $connId = isset($query['_id']) ? (string) $query['_id'] : '';
+            if ($connId === '') {
+                return new Response(
+                    400,
+                    ['Content-Type' => 'application/json; charset=utf-8'],
+                    json_encode(['code' => 1, 'msg' => 'missing _id query parameter', 'files' => []], JSON_UNESCAPED_UNICODE)
+                );
+            }
+            if ($connectionGroup->getGroup_IdCount($cliGroup) > 0) {
+                $connectionGroup->sendToGroup($cliGroup, 'api_files:' . $connId . ':{}', [], []);
+            }
+
+            return new Response(
+                200,
+                ['Content-Type' => 'application/json; charset=utf-8'],
+                json_encode(['code' => 0, 'msg' => 'ok', 'files' => []], JSON_UNESCAPED_UNICODE)
+            );
+        }
+        if ($request->getMethod() === 'GET' && trim($path, '/') === 'api/file_get_contents') {
+            $query = $request->getQueryParams();
+            $connId = isset($query['_id']) ? (string) $query['_id'] : '';
+            $filePath = isset($query['path']) ? (string) $query['path'] : '';
+            if ($connId === '') {
+                return new Response(
+                    400,
+                    ['Content-Type' => 'application/json; charset=utf-8'],
+                    json_encode(['code' => 1, 'msg' => 'missing _id query parameter'], JSON_UNESCAPED_UNICODE)
+                );
+            }
+            if ($filePath === '') {
+                return new Response(
+                    400,
+                    ['Content-Type' => 'application/json; charset=utf-8'],
+                    json_encode(['code' => 1, 'msg' => 'missing path query parameter'], JSON_UNESCAPED_UNICODE)
+                );
+            }
+            $payload = json_encode(['path' => $filePath], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($connectionGroup->getGroup_IdCount($cliGroup) > 0) {
+                $connectionGroup->sendToGroup($cliGroup, 'api_file_get_contents:' . $connId . ':' . $payload, [], []);
+            }
+
+            return new Response(
+                200,
+                ['Content-Type' => 'application/json; charset=utf-8'],
+                json_encode(['code' => 0, 'msg' => 'ok'], JSON_UNESCAPED_UNICODE)
+            );
+        }
         if (trim($path, '/') === 'index') {
             $file = __DIR__ . '/examples/index.html';
             if (is_readable($file)) {

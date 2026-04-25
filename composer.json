@@ -2,6 +2,7 @@
     "require": {
         "reactphp-x/tail": "^1.0",
         "reactphp-x/websocket-group": "^1.0",
-        "ratchet/pawl": "0.4.1"
+        "ratchet/pawl": "0.4.1",
+        "reactphp-x/bandwidth": "^1.0"
     }
 }
