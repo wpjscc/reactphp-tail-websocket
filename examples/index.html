@@ -260,6 +260,28 @@
       flex-shrink: 0;
       margin-left: auto;
     }
+    .log-filter-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-weight: normal;
+      text-transform: none;
+      letter-spacing: normal;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .log-filter-label input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      min-width: 9rem;
+      width: min(18rem, 28vw);
+      max-width: 100%;
+      font: inherit;
+    }
     .panel-heading-actions .heading-icon-btn {
       appearance: none;
       margin: 0;
@@ -273,6 +295,27 @@
       cursor: pointer;
     }
     .panel-heading-actions .heading-icon-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .panel-heading-actions .heading-text-btn {
+      appearance: none;
+      margin: 0;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      text-transform: none;
+      letter-spacing: normal;
+      white-space: nowrap;
+    }
+    .panel-heading-actions .heading-text-btn:hover {
       color: var(--accent);
       border-color: var(--accent);
     }
@@ -336,11 +379,9 @@
       <label>token <input v-model="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
       <label>groupId <input v-model="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
       <label>WS 路径 <input v-model="wsPath" type="text" title="握手路径" /></label>
-      <label>过滤 <input v-model="filterKeyword" type="search" autocomplete="off" placeholder="路径或行内容，空=全部" title="匹配 tail 横幅中的路径或正文行（不区分大小写）" /></label>
       <button type="button" @click="connect">连接</button>
       <button type="button" class="danger" :disabled="!canDisconnect" @click="disconnect">断开</button>
       <button type="button" class="secondary" @click="bindGroup">绑定</button>
-      <button type="button" @click="clearLog">清空日志</button>
       <span id="status" :class="statusClass">{{ statusText }}</span>
     </header>
     <main>
@@ -389,6 +430,8 @@
                 组播日志（非 open: 消息）
               </span>
               <span class="panel-heading-actions">
+                <label class="log-filter-label">过滤 <input v-model="filterKeyword" type="search" autocomplete="off" placeholder="机器 id、路径或行，空=全部" title="匹配横幅 ==&gt; 机器 · 路径 &lt;== 中的机器/路径，或正文行（不区分大小写；路径按 / 规范化匹配）" @click.stop /></label>
+                <button type="button" class="heading-text-btn" title="清空组播日志列表" @click.stop="clearLog">清空日志</button>
                 <button type="button" class="heading-icon-btn" title="下载组播日志" @click.stop="downloadLogContent">⬇</button>
                 <span class="fs-hint" title="全屏" aria-hidden="true" @click.stop="togglePanelFullscreen('log')">⛶</span>
               </span>
@@ -403,7 +446,7 @@
         打开示例：<code>?token=…&amp;groupId=group1</code>。
         收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
         左侧 <strong>获取文件</strong> 请求 <code>GET /api/files?_id=…</code>；点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
-        日志流形如 <code>==> /path/to.log &lt;==</code> 时，填写「过滤」可只显示路径或行文中包含该关键词的横幅与内容（新消息生效）。
+        日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
       </p>
     </main>
   </div>
@@ -414,6 +457,23 @@
 
   function normalizePath(p) {
     return String(p).replace(/\\/g, '/').replace(/\/{2,}/g, '/').trim();
+  }
+
+  /** tail-cli 横幅：<code>==> path &lt;==</code> 或 <code>==> machineId · path &lt;==</code>（兼容旧版 <code> . </code> 分隔） */
+  function parseTailBannerInner(inner) {
+    const s = String(inner);
+    const seps = [' · ', ' . '];
+    for (let si = 0; si < seps.length; si++) {
+      const sep = seps[si];
+      const idx = s.indexOf(sep);
+      if (idx !== -1) {
+        return {
+          machineId: s.slice(0, idx),
+          filePath: s.slice(idx + sep.length),
+        };
+      }
+    }
+    return { machineId: '', filePath: s };
   }
 
   function b64ToUint8Array(b64) {
@@ -1107,8 +1167,18 @@
           const forBanner = line.replace(/\r$/, '').trim();
           const bannerMatch = forBanner.match(/^==>\s*(.+?)\s*<==$/);
           if (bannerMatch) {
-            const path = bannerMatch[1];
-            const hit = path.toLowerCase().includes(kw) || forBanner.toLowerCase().includes(kw);
+            const inner = bannerMatch[1];
+            const { machineId: bannerMid, filePath: bannerPath } = parseTailBannerInner(inner);
+            const innerLc = inner.toLowerCase();
+            const midLc = String(bannerMid).toLowerCase();
+            const pathNorm = normalizePath(bannerPath).toLowerCase();
+            const kwNorm = normalizePath(kwRaw).toLowerCase();
+            const hit =
+              innerLc.includes(kw) ||
+              midLc.includes(kw) ||
+              pathNorm.includes(kw) ||
+              (kwNorm.length > 0 && pathNorm.includes(kwNorm)) ||
+              forBanner.toLowerCase().includes(kw);
             logSectionMatches.value = hit;
             if (hit) {
               appendLog(line);

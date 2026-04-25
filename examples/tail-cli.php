@@ -420,10 +420,10 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
     );
 };
 $filePath = '';
-$tail->on('start', function ($file) use (&$filePath, &$ws) {
+$tail->on('start', function ($file) use (&$filePath, &$ws, $machineId) {
     if ($filePath !== $file) {
         $filePath = $file;
-        $banner = PHP_EOL . '==> ' . $filePath . ' <==' . PHP_EOL;
+        $banner = PHP_EOL . '==> ' . $machineId . ' · ' . $filePath . ' <==' . PHP_EOL;
         // echo $banner;
         ($ws['send'])($banner);
     }
