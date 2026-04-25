@@ -215,6 +215,34 @@
       width: 100%;
       margin-bottom: 10px;
     }
+    .file-search-wrap {
+      margin-bottom: 10px;
+    }
+    .file-search-wrap label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .file-search-input {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+    }
+    .file-search-input::placeholder {
+      color: var(--muted);
+      opacity: 0.85;
+    }
     .file-tree-panel {
       font-size: 11px;
       line-height: 1.45;
@@ -594,6 +622,10 @@
         min-height: 44px;
         touch-action: manipulation;
       }
+      .file-search-input {
+        min-height: 44px;
+        font-size: 16px;
+      }
       .panel-heading-fs {
         flex-direction: column;
         align-items: stretch;
@@ -731,9 +763,23 @@
           >
             获取文件
           </button>
+          <div v-show="!filesContentHidden" class="file-search-wrap">
+            <label
+              >搜索
+              <input
+                v-model="fileSearchKeyword"
+                class="file-search-input"
+                type="search"
+                autocomplete="off"
+                placeholder="路径或机器名，空=全部"
+                title="匹配路径（斜杠统一）或机器 id；命中机器名时显示该机器全部路径"
+                @click.stop
+            /></label>
+          </div>
           <div v-show="!filesContentHidden" class="file-tree-panel">
             <p v-if="filePanelHint" class="hint-li">{{ filePanelHint }}</p>
             <p v-else-if="filePanelError" class="err-li">{{ filePanelError }}</p>
+            <p v-else-if="fileSearchNoMatch" class="hint-li">无匹配项，请调整搜索关键字</p>
             <file-tree-node v-else-if="fileTreeRoot.children.length" :node="fileTreeRoot" :is-root="true" :pick-file="openFilePreview" />
           </div>
         </aside>
@@ -818,7 +864,7 @@
         <p v-show="hintExpanded" id="app-hint-panel" class="hint">
           打开示例：<code>?token=…&amp;groupId=group1</code>。
           收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
-          <strong>绑定</strong>成功（<code>code: 0</code>）后会自动请求 <code>GET /api/files?_id=…</code>；亦可手动点左侧 <strong>获取文件</strong>。点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
+          <strong>绑定</strong>成功（<code>code: 0</code>）后会自动请求 <code>GET /api/files?_id=…</code>；亦可手动点左侧 <strong>获取文件</strong>。左侧 <strong>搜索</strong>可按路径或机器名筛选列表（命中机器名时显示该机器全部路径）。点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
           日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
         </p>
       </div>
@@ -831,6 +877,45 @@
 
   function normalizePath(p) {
     return String(p).replace(/\\/g, '/').replace(/\/{2,}/g, '/').trim();
+  }
+
+  /**
+   * 按关键字筛路径；关键字命中机器 id 时保留该机器下全部路径。
+   * @param {Map<string, Set<string>>} byMachine
+   * @param {string} kwRaw
+   * @returns {Map<string, Set<string>>}
+   */
+  function filterCliFilesMap(byMachine, kwRaw) {
+    const kwTrim = String(kwRaw).trim();
+    if (kwTrim === '') {
+      return byMachine;
+    }
+    const kwLc = kwTrim.toLowerCase();
+    const kwPathNorm = normalizePath(kwTrim).toLowerCase();
+    const out = new Map();
+    byMachine.forEach(function (paths, mid) {
+      const midStr = String(mid);
+      const midLc = midStr.toLowerCase();
+      const displayLabel = midStr === '' ? '(legacy)' : midStr;
+      const midMatch =
+        midLc.includes(kwLc) ||
+        displayLabel.toLowerCase().includes(kwLc);
+      const next = new Set();
+      paths.forEach(function (p) {
+        if (midMatch) {
+          next.add(p);
+          return;
+        }
+        const norm = normalizePath(p).toLowerCase();
+        if (norm.includes(kwLc) || norm.includes(kwPathNorm)) {
+          next.add(p);
+        }
+      });
+      if (next.size > 0) {
+        out.set(mid, next);
+      }
+    });
+    return out;
   }
 
   /** tail-cli 横幅：<code>==> path &lt;==</code> 或 <code>==> machineId · path &lt;==</code>（兼容旧版 <code> . </code> 分隔） */
@@ -1064,6 +1149,7 @@
       const previewContentHidden = ref(false);
       const logContentHidden = ref(false);
       const filesContentHidden = ref(false);
+      const fileSearchKeyword = ref('');
 
       const statusText = ref('未连接');
       const statusClass = ref('');
@@ -1145,7 +1231,26 @@
         if (!cliFilesByMachine.value || cliFilesByMachine.value.size === 0) {
           return { isLeaf: false, label: '', path: null, machineId: '', children: [] };
         }
-        return buildGroupedFileTree(cliFilesByMachine.value);
+        const kw = fileSearchKeyword.value.trim();
+        const src = kw === '' ? cliFilesByMachine.value : filterCliFilesMap(cliFilesByMachine.value, kw);
+        return buildGroupedFileTree(src);
+      });
+
+      const fileSearchNoMatch = computed(function () {
+        if (!fileSearchKeyword.value.trim()) {
+          return false;
+        }
+        if (!cliFilesByMachine.value) {
+          return false;
+        }
+        let total = 0;
+        for (const s of cliFilesByMachine.value.values()) {
+          total += s.size;
+        }
+        if (total === 0) {
+          return false;
+        }
+        return fileTreeRoot.value.children.length === 0;
       });
 
       const filePanelHint = computed(function () {
@@ -1807,6 +1912,8 @@
         previewContentHidden,
         logContentHidden,
         filesContentHidden,
+        fileSearchKeyword,
+        fileSearchNoMatch,
         statusText,
         statusClass,
         logLines,
