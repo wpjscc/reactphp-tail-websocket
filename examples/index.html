@@ -732,7 +732,6 @@
       <div v-show="headerExpanded" id="app-header-panel" class="header-panel">
         <label>token <input v-model="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
         <label>groupId <input v-model="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
-        <label>WS 路径 <input v-model="wsPath" type="text" title="握手路径" /></label>
         <button type="button" @click="connect">连接</button>
         <button type="button" class="danger" :disabled="!canDisconnect" @click="disconnect">断开</button>
         <button type="button" class="secondary" @click="bindGroup">绑定</button>
@@ -862,7 +861,7 @@
           <span class="hint-toggle-chevron" aria-hidden="true">{{ hintExpanded ? '▲' : '▼' }}</span>
         </button>
         <p v-show="hintExpanded" id="app-hint-panel" class="hint">
-          打开示例：<code>?token=…&amp;groupId=group1</code>。
+          打开示例：<code>?token=…&amp;groupId=group1</code>（WebSocket 路径默认 <code>/</code>，非默认可加 <code>&amp;wsPath=/your/path</code>）。
           收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
           <strong>绑定</strong>成功（<code>code: 0</code>）后会自动请求 <code>GET /api/files?_id=…</code>；亦可手动点左侧 <strong>获取文件</strong>。左侧 <strong>搜索</strong>可按路径或机器名筛选列表（命中机器名时显示该机器全部路径）。点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
           日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
@@ -1905,7 +1904,6 @@
       return {
         token,
         groupId,
-        wsPath,
         filterKeyword,
         hintExpanded,
         headerExpanded,
