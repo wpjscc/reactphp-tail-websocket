@@ -7,7 +7,7 @@ docker push registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
 php websocket.php group1 0.0.0.0:8099
 php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --name "*.log" /var/log
 
-http://10.10.10.2:8099/index?id=1&groupId=group1&token=xxx
+http://10.10.10.2:8099/index?groupId=group1&token=xxx
 ```
 
 # reactphp-tail-websocket
@@ -31,7 +31,7 @@ composer install
 php websocket.php <groupId> <listen>
 ```
 
-- **groupId**：组播组名（例如 `group1`），与客户端 `joinGroupById` / `sendToGroup` 使用的一致。
+- **groupId**：组播组名（例如 `group1`），与浏览器 `joinGroupBy_Id` / `sendToGroup` 使用的一致。
 - **listen**：监听地址（例如 `0.0.0.0:8090`）。
 
 示例：
@@ -53,9 +53,9 @@ php websocket.php group1 0.0.0.0:8090
 
 | 路径 | 说明 |
 |------|------|
-| **`/index`** | 返回 `examples/index.html`：浏览器里连 WebSocket、绑定用户 id / 组、查看组播日志。 |
+| **`/index`** | 返回 `examples/index.html`：浏览器里连 WebSocket、`joinGroupBy_Id` 入组、查看组播日志。 |
 | **WebSocket** | 对支持升级的请求走 WebSocket（默认路径一般为 `/`）。 |
-| **`POST /`** | `WebsocketGroupMiddleware`：JSON 体中提供 `event` 及对应参数，可调用 `ConnectionGroup` 上的方法（如 `bindId`、`joinGroupById`）。 |
+| **`POST /`** | `WebsocketGroupMiddleware`：JSON 体中提供 `event` 及对应参数，可调用 `ConnectionGroup` 上的方法（如 `joinGroupBy_Id`）。 |
 
 ### WebSocket 消息约定（服务端）
 
@@ -69,11 +69,11 @@ php websocket.php group1 0.0.0.0:8090
 
 通过 `http://<host>:<port>/index` 访问（或由本地直接打开文件时，需把 WebSocket URL 指到实际服务地址）。
 
-- 连接 WebSocket 后，若收到 `open:` 且已填写 **token、id、groupId**，会自动 `POST` 执行 `bindId` + `joinGroupById`。
+- 连接 WebSocket 后，若收到 `open:` 且已填写 **token、groupId**，会自动 `POST` 执行 `joinGroupBy_Id`。
 - 否则保持连接，补全后点击 **绑定**（不必重连）。
 - 非 `open:` 开头的消息在页面下方组播日志区域显示；支持贴底自动滚动、上滑查看时暂停自动滚到底。
 
-查询参数示例：`?token=...&id=1&groupId=group1&wsPath=/`
+查询参数示例：`?token=...&groupId=group1&wsPath=/`
 
 ## 命令行 tail 客户端 `examples/tail-cli.php`
 

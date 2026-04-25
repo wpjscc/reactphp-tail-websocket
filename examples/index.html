@@ -116,7 +116,6 @@
 <body>
   <header>
     <label>token <input id="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
-    <label>id <input id="userId" type="text" value="1" /></label>
     <label>groupId <input id="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
     <label>WS 路径 <input id="wsPath" type="text" value="/" title="握手路径" /></label>
     <label>过滤 <input id="filterKeyword" type="search" autocomplete="off" placeholder="路径或行内容，空=全部" title="匹配 tail 横幅中的路径或正文行（不区分大小写）" /></label>
@@ -130,8 +129,8 @@
     <h2>组播日志（非 open: 消息）</h2>
     <div id="log"></div>
     <p class="hint">
-      打开示例：<code>?token=…&amp;id=1&amp;groupId=group1</code>。
-      收到 <code>open:…</code> 时，仅当 token、id、groupId 都已填写才会自动 POST；否则保持连接，补全后点「绑定」（未配置 TOKEN 的服务端可将 token 留空后再绑 id+groupId）。
+      打开示例：<code>?token=…&amp;groupId=group1</code>。
+      收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
       日志流形如 <code>==> /path/to.log &lt;==</code> 时，填写「过滤」可只显示路径或行文中包含该关键词的横幅与内容（新消息生效）。
     </p>
   </main>
@@ -141,7 +140,6 @@
   const logEl = document.getElementById('log');
   const statusEl = document.getElementById('status');
   const tokenEl = document.getElementById('token');
-  const userIdEl = document.getElementById('userId');
   const groupIdEl = document.getElementById('groupId');
   const wsPathEl = document.getElementById('wsPath');
   const filterEl = document.getElementById('filterKeyword');
@@ -151,7 +149,6 @@
   const clearBtn = document.getElementById('clearBtn');
 
   if (qs.get('token') != null) tokenEl.value = qs.get('token');
-  if (qs.get('id') != null) userIdEl.value = qs.get('id');
   if (qs.get('groupId') != null) groupIdEl.value = qs.get('groupId');
   if (qs.get('wsPath') != null) wsPathEl.value = qs.get('wsPath');
   if (qs.get('filter') != null) filterEl.value = qs.get('filter');
@@ -205,34 +202,27 @@
     return proto + '//' + location.host + path;
   }
 
-  /** 自动绑定：三者齐全才触发（与「有 token 才自动」一致） */
+  /** 自动入组：token 与 groupId 均填写时，收到 open: 即 POST joinGroupBy_Id */
   function hasAutoBindParams() {
-    return (
-      tokenEl.value.trim() !== '' &&
-      userIdEl.value.trim() !== '' &&
-      groupIdEl.value.trim() !== ''
-    );
+    return tokenEl.value.trim() !== '' && groupIdEl.value.trim() !== '';
   }
 
-  /** 手动绑定：至少 id + groupId（token 可空，适配未设置 TOKEN 的服务端） */
+  /** 手动入组：至少 groupId（token 可空，适配未设置 TOKEN 的服务端） */
   function hasManualBindParams() {
-    return userIdEl.value.trim() !== '' && groupIdEl.value.trim() !== '';
+    return groupIdEl.value.trim() !== '';
   }
 
-  async function postBindAndJoin(_id) {
+  async function postJoinGroupBy_Id(_id) {
     const token = tokenEl.value.trim();
-    const idRaw = userIdEl.value.trim();
     const groupId = groupIdEl.value.trim();
-    if (!idRaw || !groupId) {
-      logLine('[POST] 请填写 id、groupId');
+    if (!groupId) {
+      logLine('[POST] 请填写 groupId');
       return;
     }
-    const id = /^-?\d+$/.test(idRaw) ? parseInt(idRaw, 10) : idRaw;
     const body = {
       token: token,
-      event: 'bindId,joinGroupById',
-      bindId: { id: id, _id: _id },
-      joinGroupById: { id: id, groupId: groupId },
+      event: 'joinGroupBy_Id',
+      joinGroupBy_Id: { groupId: groupId, _id: _id },
     };
     try {
       const res = await fetch(location.origin + '/', {
@@ -241,7 +231,7 @@
         body: JSON.stringify(body),
       });
       const j = await res.json().catch(function () { return { raw: true }; });
-      logLine('[POST] bindId+joinGroupById → ' + res.status + ' ' + JSON.stringify(j));
+      logLine('[POST] joinGroupBy_Id → ' + res.status + ' ' + JSON.stringify(j));
     } catch (e) {
       logLine('[POST] 失败: ' + e.message);
     }
@@ -281,10 +271,10 @@
       }
       if (_id && hasAutoBindParams() && !autoBindDone) {
         autoBindDone = true;
-        postBindAndJoin(_id);
+        postJoinGroupBy_Id(_id);
       } else if (_id && !hasAutoBindParams() && !hintedNeedBind) {
         hintedNeedBind = true;
-        logLine('[提示] 已拿到连接 id。若需自动绑定请填齐 token、id、groupId；否则填好 id、groupId（及必要时 token）后点「绑定」');
+        logLine('[提示] 已拿到连接 _id。自动入组请填齐 token、groupId；否则填好 groupId（及必要时 token）后点「绑定」');
       }
       return;
     }
@@ -369,10 +359,10 @@
       return;
     }
     if (!hasManualBindParams()) {
-      logLine('[绑定] 请填写 id、groupId（若服务端校验 token 也需填写）');
+      logLine('[绑定] 请填写 groupId（若服务端校验 token 也需填写）');
       return;
     }
-    postBindAndJoin(lastConnId);
+    postJoinGroupBy_Id(lastConnId);
   });
   clearBtn.addEventListener('click', function () { logEl.textContent = ''; });
 
