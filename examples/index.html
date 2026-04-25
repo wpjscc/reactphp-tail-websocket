@@ -358,7 +358,7 @@
           <div class="preview-column" ref="previewColumnEl">
             <h2 class="panel-heading-fs">
               <span class="panel-heading-title" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('preview')">
-                文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span>
+                文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedMachineId ? selectedMachineId + ' · ' : '' }}{{ selectedFilePath }}</span>
               </span>
               <span class="panel-heading-actions">
                 <button type="button" class="heading-icon-btn" title="下载当前正文" @click.stop="downloadPreviewContent">⬇</button>
@@ -472,9 +472,11 @@
   /**
    * Trie：同一路径既可作为文件又作为前缀（如 /a/b 与 /a/b/c）时，目录内额外挂一条「本体」叶子。
    * @param {string[]} paths
-   * @returns {{ isLeaf: boolean, label: string, path: string|null, children: any[] }}
+   * @param {string} [machineIdForLeaves] 叶子节点携带，用于多机同路径区分
+   * @returns {{ isLeaf: boolean, label: string, path: string|null, machineId: string, children: any[] }}
    */
-  function buildFileTree(paths) {
+  function buildFileTree(paths, machineIdForLeaves) {
+    const mid = machineIdForLeaves == null ? '' : String(machineIdForLeaves);
     const uniq = Array.from(new Set(paths.map(normalizePath).filter(Boolean))).sort();
     const rootTrie = { segments: new Map(), terminal: null };
 
@@ -499,7 +501,7 @@
       }
     }
 
-    const viewRoot = { isLeaf: false, label: '', path: null, children: [] };
+    const viewRoot = { isLeaf: false, label: '', path: null, machineId: mid, children: [] };
 
     function trieToView(trieNode, outChildren) {
       const entries = Array.from(trieNode.segments.entries()).sort(function (a, b) {
@@ -511,12 +513,13 @@
         const hasKids = n.segments.size > 0;
         const hasFile = n.terminal !== null;
         if (hasKids) {
-          const dirNode = { isLeaf: false, label: seg, path: null, children: [] };
+          const dirNode = { isLeaf: false, label: seg, path: null, machineId: mid, children: [] };
           if (hasFile) {
             dirNode.children.push({
               isLeaf: true,
               label: '·',
               path: n.terminal,
+              machineId: mid,
               children: [],
             });
           }
@@ -528,6 +531,7 @@
             isLeaf: true,
             label: seg,
             path: n.terminal,
+            machineId: mid,
             children: [],
           });
         }
@@ -553,11 +557,42 @@
     return viewRoot;
   }
 
+  /**
+   * @param {Map<string, Set<string>>} byMachine key 为 tail-cli 的 machineId；空串表示旧版未带 id 的响应
+   */
+  function buildGroupedFileTree(byMachine) {
+    const viewRoot = { isLeaf: false, label: '', path: null, machineId: '', children: [] };
+    if (!byMachine || byMachine.size === 0) {
+      return viewRoot;
+    }
+    const entries = Array.from(byMachine.entries()).sort(function (a, b) {
+      return String(a[0]).localeCompare(String(b[0]), undefined, { sensitivity: 'base' });
+    });
+    for (let i = 0; i < entries.length; i++) {
+      const rawMid = entries[i][0];
+      const pathsSet = entries[i][1];
+      const displayLabel = rawMid === '' ? '(legacy)' : String(rawMid);
+      const leafMid = rawMid === '' ? '' : String(rawMid);
+      const inner = buildFileTree(Array.from(pathsSet), leafMid);
+      if (!inner.children.length) {
+        continue;
+      }
+      viewRoot.children.push({
+        isLeaf: false,
+        label: displayLabel,
+        path: null,
+        machineId: leafMid,
+        children: inner.children,
+      });
+    }
+    return viewRoot;
+  }
+
   function fileNodeKey(c) {
     if (c.isLeaf) {
-      return 'f:' + c.path;
+      return 'f:' + (c.machineId || '') + ':' + c.path;
     }
-    return 'd:' + c.label + ':' + c.children.length;
+    return 'd:' + (c.machineId || '') + ':' + c.label + ':' + c.children.length;
   }
 
   const FileTreeNode = {
@@ -571,7 +606,7 @@
     template: `
       <ul :class="['file-tree-ul', { 'root-ul': isRoot }]">
         <li v-for="c in node.children" :key="fileNodeKey(c)" class="file-tree-li">
-          <span v-if="c.isLeaf" class="file-leaf file-leaf-click" :title="c.path" @click.stop="pickFile(c.path)">{{ c.label }}</span>
+          <span v-if="c.isLeaf" class="file-leaf file-leaf-click" :title="(c.machineId ? c.machineId + ' · ' : '') + c.path" @click.stop="pickFile(c.path, c.machineId || '')">{{ c.label }}</span>
           <details v-else class="file-dir" open>
             <summary><span class="dir-name">{{ c.label }}</span></summary>
             <file-tree-node :node="c" :is-root="false" :pick-file="pickFile" />
@@ -606,8 +641,8 @@
 
       const logSectionMatches = ref(false);
       const lastConnId = ref('');
-      /** @type {import('vue').Ref<Set<string>|null>} */
-      const cliFilesSet = ref(null);
+      /** @type {import('vue').Ref<Map<string, Set<string>>|null>} machineId → 路径集合；空串 key 表示未带 machineId 的旧版 tail-cli */
+      const cliFilesByMachine = ref(null);
       const fileListError = ref('');
       const fetchFilesBusy = ref(false);
 
@@ -618,6 +653,8 @@
       let filePreviewStream = null;
 
       const selectedFilePath = ref('');
+      /** 当前预览请求对应的机器 id；空串表示未按机器定向（兼容旧版） */
+      const selectedMachineId = ref('');
       const previewWaiting = ref(false);
       const previewError = ref('');
       /** @type {import('vue').Ref<Record<string, unknown>|null>} */
@@ -666,20 +703,24 @@
       );
 
       const fileTreeRoot = computed(function () {
-        if (!cliFilesSet.value || cliFilesSet.value.size === 0) {
-          return { isLeaf: false, label: '', path: null, children: [] };
+        if (!cliFilesByMachine.value || cliFilesByMachine.value.size === 0) {
+          return { isLeaf: false, label: '', path: null, machineId: '', children: [] };
         }
-        return buildFileTree(Array.from(cliFilesSet.value));
+        return buildGroupedFileTree(cliFilesByMachine.value);
       });
 
       const filePanelHint = computed(function () {
         if (fileListError.value) {
           return '';
         }
-        if (cliFilesSet.value === null) {
+        if (cliFilesByMachine.value === null) {
           return '点击「获取文件」后在此显示 tail 监视路径（需已连接且 tail-cli 在 cliGroup）';
         }
-        if (cliFilesSet.value.size === 0) {
+        let total = 0;
+        for (const s of cliFilesByMachine.value.values()) {
+          total += s.size;
+        }
+        if (total === 0) {
           return '已请求，等待 WebSocket api_files_response 推送…';
         }
         return '';
@@ -789,7 +830,9 @@
         if (!base) {
           base = 'preview';
         }
-        return base + '.txt';
+        const mid = selectedMachineId.value.trim();
+        const midPrefix = mid ? mid.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 64) + '-' : '';
+        return midPrefix + base + '.txt';
       }
 
       function downloadPreviewContent() {
@@ -825,13 +868,14 @@
       }
 
       function resetFilePanelForDisconnect() {
-        cliFilesSet.value = null;
+        cliFilesByMachine.value = null;
         fileListError.value = '';
       }
 
       function resetFilePreview() {
         filePreviewStream = null;
         selectedFilePath.value = '';
+        selectedMachineId.value = '';
         previewWaiting.value = false;
         previewError.value = '';
         previewHeader.value = null;
@@ -858,10 +902,22 @@
           return normalizePath(req) === normalizePath(selectedFilePath.value);
         }
 
+        function streamMatches() {
+          if (!pathMatches(data.requestedPath)) {
+            return false;
+          }
+          const sel = selectedMachineId.value;
+          if (sel === '') {
+            return true;
+          }
+          const payloadMid = typeof data.machineId === 'string' ? data.machineId : '';
+          return payloadMid === sel;
+        }
+
         const phase = data.phase;
 
         if (phase === 'start') {
-          if (!pathMatches(data.requestedPath)) {
+          if (!streamMatches()) {
             return;
           }
           previewError.value = '';
@@ -877,7 +933,7 @@
         }
 
         if (phase === 'chunk') {
-          if (!pathMatches(data.requestedPath)) {
+          if (!streamMatches()) {
             return;
           }
           if (!filePreviewStream) {
@@ -900,7 +956,7 @@
         }
 
         if (phase === 'done') {
-          if (!pathMatches(data.requestedPath)) {
+          if (!streamMatches()) {
             return;
           }
           if (filePreviewStream) {
@@ -913,7 +969,7 @@
         }
 
         if (phase === 'error') {
-          if (data.requestedPath && !pathMatches(data.requestedPath)) {
+          if (!streamMatches()) {
             return;
           }
           filePreviewStream = null;
@@ -928,7 +984,7 @@
         }
 
         const req = typeof data.requestedPath === 'string' ? data.requestedPath : '';
-        if (req && normalizePath(req) !== normalizePath(selectedFilePath.value)) {
+        if (req && !streamMatches()) {
           return;
         }
         previewWaiting.value = false;
@@ -947,7 +1003,7 @@
         previewBodyText.value = b64ToUtf8(b64);
       }
 
-      async function openFilePreview(filePath) {
+      async function openFilePreview(filePath, machineId) {
         if (!filePath) {
           return;
         }
@@ -955,8 +1011,10 @@
           appendLog('[文件] 请先连接 WebSocket 并等待 open:');
           return;
         }
+        const mid = machineId == null ? '' : String(machineId);
         filePreviewStream = null;
         selectedFilePath.value = filePath;
+        selectedMachineId.value = mid;
         previewWaiting.value = true;
         previewError.value = '';
         previewHeader.value = null;
@@ -966,6 +1024,9 @@
           const u = new URL(location.origin + '/api/file_get_contents');
           u.searchParams.set('_id', lastConnId.value);
           u.searchParams.set('path', filePath);
+          if (mid !== '') {
+            u.searchParams.set('machineId', mid);
+          }
           const res = await fetch(u.toString());
           const text = await res.text();
           if (!res.ok) {
@@ -1067,7 +1128,7 @@
           return;
         }
         if (msg.startsWith('api_files_response:')) {
-          if (cliFilesSet.value === null) {
+          if (cliFilesByMachine.value === null) {
             return;
           }
           fileListError.value = '';
@@ -1075,14 +1136,21 @@
           try {
             const data = JSON.parse(payload);
             const files = Array.isArray(data.files) ? data.files : [];
-            const set = cliFilesSet.value;
+            const rawMid = typeof data.machineId === 'string' ? data.machineId.trim() : '';
+            const mid = rawMid;
+            const next = new Map(cliFilesByMachine.value);
+            let set = next.get(mid);
+            if (!set) {
+              set = new Set();
+              next.set(mid, set);
+            }
             for (let i = 0; i < files.length; i++) {
               const p = files[i];
               if (typeof p === 'string') {
                 set.add(p);
               }
             }
-            cliFilesSet.value = new Set(set);
+            cliFilesByMachine.value = next;
           } catch (e) {
             fileListError.value = '解析 api_files_response 失败: ' + e.message;
           }
@@ -1212,12 +1280,12 @@
         }
         fetchFilesBusy.value = true;
         fileListError.value = '';
-        cliFilesSet.value = new Set();
+        cliFilesByMachine.value = new Map();
         try {
           const res = await fetch(location.origin + '/api/files?_id=' + encodeURIComponent(lastConnId.value));
           const text = await res.text();
           if (!res.ok) {
-            cliFilesSet.value = null;
+            cliFilesByMachine.value = null;
             let msg = 'HTTP ' + res.status;
             try {
               const j = JSON.parse(text);
@@ -1238,7 +1306,7 @@
             /* ignore */
           }
         } catch (e) {
-          cliFilesSet.value = null;
+          cliFilesByMachine.value = null;
           fileListError.value = e.message;
         } finally {
           fetchFilesBusy.value = false;
@@ -1289,6 +1357,7 @@
         fetchApiFiles,
         openFilePreview,
         selectedFilePath,
+        selectedMachineId,
         previewWaiting,
         previewError,
         previewHeader,

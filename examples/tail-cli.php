@@ -26,6 +26,7 @@ $names = [];
 $paths = [];
 $wsUrl = '';
 $cliGroup = '';
+$machineId = '';
 
 $argv = $GLOBALS['argv'];
 array_shift($argv);
@@ -54,6 +55,14 @@ for ($i = 0, $c = count($argv); $i < $c; $i++) {
     }
     if (strncmp($a, '--cli-group=', 12) === 0) {
         $cliGroup = substr($a, 12);
+        continue;
+    }
+    if ($a === '--machine-id') {
+        $machineId = trim((string) ($argv[++$i] ?? ''));
+        continue;
+    }
+    if (strncmp($a, '--machine-id=', 13) === 0) {
+        $machineId = trim(substr($a, 13));
         continue;
     }
     if ($a === '-n' || $a === '--lines') {
@@ -119,6 +128,11 @@ if ($cliGroup === '') {
     exit(1);
 }
 
+if ($machineId === '') {
+    $envMid = getenv('TAIL_CLI_MACHINE_ID');
+    $machineId = ($envMid !== false && $envMid !== '') ? trim($envMid) : (gethostname() ?: 'unknown');
+}
+
 foreach ($paths as $p) {
     if (!is_dir($p) && !is_file($p)) {
         fwrite(STDERR, "tail-cli: cannot open '{$p}' for reading: No such file or directory\n");
@@ -147,9 +161,9 @@ if ($te !== false && $te !== '') {
 $browser = new Browser();
 $bandwidth = new \ReactphpX\Bandwidth\Bandwidth(1024 * 512, 1024 * 512);
 
-$connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser, $bandwidth) {
+$connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
     \Ratchet\Client\connect($wsUrl)->then(
-        function (\Ratchet\Client\WebSocket $conn) use (&$connectWs, &$ws, $tail, &$tailStarted, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth) {
+        function (\Ratchet\Client\WebSocket $conn) use (&$connectWs, &$ws, $tail, &$tailStarted, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
             if ($ws['pingTimer'] !== null) {
                 Loop::cancelTimer($ws['pingTimer']);
             }
@@ -161,7 +175,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
             });
 
             $lastJoined_id = '';
-            $conn->on('message', function ($msg) use ($conn, &$lastJoined_id, &$tailStarted, $tail, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth) {
+            $conn->on('message', function ($msg) use ($conn, &$lastJoined_id, &$tailStarted, $tail, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
                 $text = $msg instanceof \Ratchet\RFC6455\Messaging\MessageInterface ? (string) $msg : (string) $msg;
                 if (str_starts_with($text, 'api_file_get_contents:')) {
                     if (!preg_match('/^api_file_get_contents:([^:]+):(.*)$/s', $text, $m)) {
@@ -172,6 +186,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     if (!is_array($meta) || !isset($meta['path'])) {
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'ok' => false,
+                            'machineId' => $machineId,
                             'requestedPath' => '',
                             'header' => null,
                             'error' => 'invalid payload',
@@ -181,11 +196,16 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
 
                         return;
                     }
+                    $reqMachine = isset($meta['machineId']) ? (string) $meta['machineId'] : '';
+                    if ($reqMachine !== '' && $reqMachine !== $machineId) {
+                        return;
+                    }
                     $requested = (string) $meta['path'];
                     $realPath = tail_cli_resolve_allowed_path($tail, $requested);
                     if ($realPath === null) {
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'ok' => false,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'header' => ['path' => $requested],
                             'error' => 'path not allowed or not a file',
@@ -200,6 +220,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     if ($st === false) {
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'ok' => false,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'header' => ['path' => $realPath],
                             'error' => 'stat failed',
@@ -212,6 +233,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     if ((int) $st['size'] > $maxBytes) {
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'ok' => false,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'header' => tail_cli_file_header_from_stat($realPath, $st),
                             'error' => 'file too large (max 10 MiB)',
@@ -226,6 +248,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     if ((int) $st['size'] === 0) {
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'ok' => true,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'header' => $header,
                             'error' => '',
@@ -238,6 +261,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                         'phase' => 'start',
                         'ok' => true,
+                        'machineId' => $machineId,
                         'requestedPath' => $requested,
                         'header' => $header,
                         'banner' => $banner,
@@ -246,7 +270,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     $stream = $bandwidth->file($realPath);
                     $sent = 0;
                     $aborted = false;
-                    $stream->on('data', function ($data) use ($conn, $reqId, $requested, $header, $stream, $maxBytes, &$sent, &$aborted) {
+                    $stream->on('data', function ($data) use ($conn, $reqId, $requested, $header, $stream, $maxBytes, &$sent, &$aborted, $machineId) {
 
                         if ($aborted) {
                             return;
@@ -261,6 +285,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                             $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                                 'phase' => 'error',
                                 'ok' => false,
+                                'machineId' => $machineId,
                                 'requestedPath' => $requested,
                                 'header' => $header,
                                 'error' => 'file too large while streaming (max 10 MiB)',
@@ -271,21 +296,23 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                         $sent += $len;
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'phase' => 'chunk',
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'bodyB64' => base64_encode($data),
                         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
                     });
-                    $stream->on('close', function () use ($conn, $reqId, $requested, &$aborted) {
+                    $stream->on('close', function () use ($conn, $reqId, $requested, &$aborted, $machineId) {
                         if ($aborted) {
                             return;
                         }
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'phase' => 'done',
                             'ok' => true,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
                     });
-                    $stream->on('error', function ($error) use ($conn, $reqId, $header, $requested, &$aborted) {
+                    $stream->on('error', function ($error) use ($conn, $reqId, $header, $requested, &$aborted, $machineId) {
                         if ($aborted) {
                             return;
                         }
@@ -294,6 +321,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                         $conn->send('api_file_get_contents_response:' . $reqId . ':' . json_encode([
                             'phase' => 'error',
                             'ok' => false,
+                            'machineId' => $machineId,
                             'requestedPath' => $requested,
                             'header' => $header,
                             'error' => $msg,
@@ -308,7 +336,10 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                     }
                     $reqId = $m[1];
                     $pathsList = $tail->getWatchedFilePaths();
-                    $out = json_encode(['files' => array_values($pathsList)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $out = json_encode([
+                        'files' => array_values($pathsList),
+                        'machineId' => $machineId,
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                     $conn->send('api_files_response:' . $reqId . ':' . $out);
 
                     return;
@@ -492,6 +523,7 @@ Follow one or more files or directories (similar to "tail -f").
 
       --ws-url URL    WebSocket URL (required), e.g. ws://127.0.0.1:8090/
       --cli-group G   Required; same as websocket.php <cliGroup>; joinGroupBy_Id before tail starts.
+      --machine-id ID  Optional; defaults to env TAIL_CLI_MACHINE_ID or gethostname(). Sent in api_files / file_get_contents for multi-host.
   -n, --lines N       Print the last N lines before following (default: 5).
                       Use 0 to skip initial tail output.
   -s, --sleep SEC     Rescan period for directory watches in seconds (default: 1).

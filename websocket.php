@@ -143,7 +143,12 @@ $http = new React\Http\HttpServer(
                     json_encode(['code' => 1, 'msg' => 'missing path query parameter'], JSON_UNESCAPED_UNICODE)
                 );
             }
-            $payload = json_encode(['path' => $filePath], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $machineId = isset($query['machineId']) ? (string) $query['machineId'] : '';
+            $payloadArr = ['path' => $filePath];
+            if ($machineId !== '') {
+                $payloadArr['machineId'] = $machineId;
+            }
+            $payload = json_encode($payloadArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($connectionGroup->getGroup_IdCount($cliGroup) > 0) {
                 $connectionGroup->sendToGroup($cliGroup, 'api_file_get_contents:' . $connId . ':' . $payload, [], []);
             }
