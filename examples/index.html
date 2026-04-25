@@ -95,6 +95,15 @@
       flex-direction: column;
       gap: 12px;
       min-width: 0;
+      min-height: 0;
+      height: min(680px, calc(100vh - 140px));
+    }
+    .preview-column,
+    .log-column {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
     }
     @media (max-width: 900px) {
       .layout-grid { grid-template-columns: 1fr; }
@@ -175,8 +184,8 @@
       color: #56d364;
     }
     #file-preview {
-      max-height: min(340px, 42vh);
-      min-height: 120px;
+      flex: 1 1 auto;
+      min-height: 0;
       overflow: auto;
       overscroll-behavior: contain;
       background: var(--panel);
@@ -222,6 +231,47 @@
       letter-spacing: 0;
       font-size: 11px;
     }
+    .panel-heading-fs {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      user-select: none;
+    }
+    .panel-heading-fs:hover {
+      color: var(--accent);
+    }
+    .panel-heading-fs .fs-hint {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: normal;
+      text-transform: none;
+      letter-spacing: 0;
+      opacity: 0.75;
+    }
+    .panel-heading-fs:hover .fs-hint {
+      opacity: 1;
+      color: var(--accent);
+    }
+    .preview-column:fullscreen,
+    .log-column:fullscreen {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: 16px;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
     h2 {
       margin: 0 0 8px;
       font-size: 12px;
@@ -232,8 +282,7 @@
     }
     #log {
       flex: 1 1 auto;
-      height: min(420px, calc(100vh - 380px));
-      min-height: 200px;
+      min-height: 0;
       overflow-x: hidden;
       overflow-y: auto;
       overscroll-behavior: contain;
@@ -278,9 +327,12 @@
           </div>
         </aside>
         <div class="right-stack">
-          <div class="preview-column">
-            <h2>文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span></h2>
-            <div id="file-preview" ref="previewEl" @scroll.passive="onPreviewScroll">
+          <div class="preview-column" ref="previewColumnEl">
+            <h2 class="panel-heading-fs" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('preview')">
+              <span>文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span></span>
+              <span class="fs-hint" aria-hidden="true">⛶</span>
+            </h2>
+            <div id="file-preview" ref="previewEl">
               <p v-if="previewWaiting" class="preview-wait">正在通过 tail-cli 流式读取…</p>
               <p v-if="previewError" class="preview-err">{{ previewError }}</p>
               <div v-if="previewHeader" class="preview-meta">
@@ -298,8 +350,11 @@
               <p v-if="!previewWaiting && !previewError && !previewHeader && !selectedFilePath" class="preview-wait">点击左侧树中的文件路径查看内容（≤10 MiB）</p>
             </div>
           </div>
-          <div class="log-column">
-            <h2>组播日志（非 open: 消息）</h2>
+          <div class="log-column" ref="logColumnEl">
+            <h2 class="panel-heading-fs" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('log')">
+              <span>组播日志（非 open: 消息）</span>
+              <span class="fs-hint" aria-hidden="true">⛶</span>
+            </h2>
             <div id="log" ref="logEl">
               <div v-for="(line, i) in logLines" :key="i">{{ line }}</div>
             </div>
@@ -503,6 +558,8 @@
       const logLines = ref([]);
       const logEl = ref(null);
       const previewEl = ref(null);
+      const previewColumnEl = ref(null);
+      const logColumnEl = ref(null);
 
       const sock = ref(null);
       const connectGen = ref(0);
@@ -529,33 +586,31 @@
       const previewHeader = ref(null);
       const previewBanner = ref('');
       const previewBodyText = ref('');
-      /** 用户是否保持在预览区底部（滚离底部后为 false，与组播日志贴底逻辑一致） */
-      const previewStickBottom = ref(true);
 
       const canDisconnect = computed(function () {
         return sock.value !== null;
       });
 
-      function onPreviewScroll(ev) {
-        const el = ev.target;
-        if (!el || el !== previewEl.value) {
-          return;
+      function isPreviewPinnedToBottom() {
+        const el = previewEl.value;
+        if (!el) {
+          return true;
         }
-        const threshold = 48;
-        previewStickBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+        const threshold = 12;
+        return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
       }
 
+      /** 与 appendLog 相同：先判贴底，再在 nextTick 后滚到底 */
       function scrollPreviewToBottomIfStuck() {
-        nextTick(function () {
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              const e = previewEl.value;
-              if (e && previewStickBottom.value) {
-                e.scrollTop = e.scrollHeight;
-              }
-            });
+        const pin = isPreviewPinnedToBottom();
+        if (pin) {
+          nextTick(function () {
+            const el = previewEl.value;
+            if (el) {
+              el.scrollTop = el.scrollHeight;
+            }
           });
-        });
+        }
       }
 
       watch(
@@ -603,6 +658,50 @@
         }
       }
 
+      function getFullscreenElement() {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+      }
+
+      function exitFullscreenDoc() {
+        const d = document;
+        if (d.exitFullscreen) {
+          d.exitFullscreen().catch(function () {});
+        } else if (d.webkitExitFullscreen) {
+          d.webkitExitFullscreen();
+        }
+      }
+
+      function togglePanelFullscreen(which) {
+        const el = which === 'preview' ? previewColumnEl.value : logColumnEl.value;
+        if (!el) {
+          return;
+        }
+        const cur = getFullscreenElement();
+        if (cur === el) {
+          exitFullscreenDoc();
+          return;
+        }
+        function enter() {
+          const req = el.requestFullscreen || el.webkitRequestFullscreen;
+          if (req) {
+            req.call(el).catch(function () {});
+          }
+        }
+        if (cur && cur !== el) {
+          const p = document.exitFullscreen ? document.exitFullscreen() : null;
+          if (p && typeof p.then === 'function') {
+            p.then(enter).catch(enter);
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+            setTimeout(enter, 0);
+          } else {
+            enter();
+          }
+        } else {
+          enter();
+        }
+      }
+
       function isLogPinnedToBottom() {
         const el = logEl.value;
         if (!el) {
@@ -637,7 +736,6 @@
 
       function resetFilePreview() {
         filePreviewStream = null;
-        previewStickBottom.value = true;
         selectedFilePath.value = '';
         previewWaiting.value = false;
         previewError.value = '';
@@ -763,7 +861,6 @@
           return;
         }
         filePreviewStream = null;
-        previewStickBottom.value = true;
         selectedFilePath.value = filePath;
         previewWaiting.value = true;
         previewError.value = '';
@@ -1058,6 +1155,9 @@
       });
 
       onUnmounted(function () {
+        if (getFullscreenElement()) {
+          exitFullscreenDoc();
+        }
         manualDisconnect.value = true;
         clearReconnectTimer();
         if (sock.value) {
@@ -1077,6 +1177,9 @@
         logLines,
         logEl,
         previewEl,
+        previewColumnEl,
+        logColumnEl,
+        togglePanelFullscreen,
         canDisconnect,
         fetchFilesBusy,
         fileTreeRoot,
@@ -1095,7 +1198,6 @@
         previewBanner,
         previewBodyText,
         formatBytes,
-        onPreviewScroll,
       };
     },
   }).mount('#app');
