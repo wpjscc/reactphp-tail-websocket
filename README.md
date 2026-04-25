@@ -3,6 +3,13 @@ docker build -t registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
 docker push registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
 ```
 
+```
+php websocket.php group1 0.0.0.0:8099
+php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --name "*.log" /var/log
+
+http://10.10.10.2:8099/index?id=1&groupId=group1&token=xxx
+```
+
 # reactphp-tail-websocket
 
 基于 [ReactPHP](https://reactphp.org/) 的 WebSocket 组播服务：把 `tail -f` 风格的日志流通过 WebSocket 推到同一组内的所有连接，并附带浏览器调试页与 HTTP 绑定接口。
@@ -74,6 +81,7 @@ php websocket.php group1 0.0.0.0:8090
 
 ```bash
 php examples/tail-cli.php --ws-url ws://127.0.0.1:8090/ -n 20 /path/to/app.log
+php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --name "*.log" /var/log
 ```
 
 - **`--ws-url`**：必选，WebSocket 地址（客户端请使用可路由 IP/主机名，不要用 `0.0.0.0`）。
