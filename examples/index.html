@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>WebSocket 日志</title>
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <style>
@@ -41,17 +41,52 @@
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+    }
+    .header-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+    }
+    .header-expand-toggle {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 8px 14px;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .header-expand-toggle:hover {
+      color: #56d364;
+      border-color: #56d364;
+    }
+    .header-panel {
+      display: flex;
       flex-wrap: wrap;
       gap: 10px 16px;
       align-items: center;
+      padding-top: 12px;
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
     }
-    header label {
+    header .header-panel label {
       display: flex;
       align-items: center;
       gap: 6px;
       color: var(--muted);
     }
-    header input {
+    header .header-panel input {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
@@ -59,7 +94,7 @@
       border-radius: 4px;
       min-width: 8rem;
     }
-    header button {
+    header .header-panel button {
       background: var(--accent);
       color: #0f1419;
       border: none;
@@ -68,17 +103,17 @@
       font-weight: 600;
       cursor: pointer;
     }
-    header button.secondary {
+    header .header-panel button.secondary {
       background: var(--panel);
       color: var(--accent);
       border: 1px solid var(--accent);
     }
-    header button.danger {
+    header .header-panel button.danger {
       background: var(--panel);
       color: #f85149;
       border: 1px solid #f85149;
     }
-    header button:disabled {
+    header .header-panel button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
@@ -119,10 +154,27 @@
       display: flex;
       flex-direction: column;
     }
+    .preview-column.panel-collapsed,
+    .log-column.panel-collapsed {
+      flex: 0 0 auto;
+      min-height: 0;
+    }
+    .layout-grid.layout-grid-files-collapsed {
+      grid-template-columns: auto 1fr;
+    }
     @media (max-width: 900px) {
       .layout-grid {
         grid-template-columns: 1fr;
         grid-template-rows: auto minmax(0, 1fr);
+      }
+      .layout-grid.layout-grid-files-collapsed {
+        grid-template-columns: 1fr;
+      }
+      .files-aside {
+        max-height: min(40vh, 300px);
+      }
+      .files-aside.files-aside-collapsed {
+        max-height: none;
       }
     }
     .files-aside {
@@ -133,8 +185,31 @@
       min-height: 0;
       overflow: auto;
     }
-    .files-aside h2 {
-      margin-top: 0;
+    .files-aside.files-aside-collapsed {
+      align-self: start;
+      overflow: visible;
+    }
+    .files-aside-heading {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .files-aside-heading:hover {
+      color: var(--accent);
+    }
+    .files-aside-heading:hover .panel-heading-collapse-icon {
+      color: var(--accent);
+    }
+    .files-aside-collapsed .files-aside-heading {
+      margin-bottom: 0;
     }
     .fetch-files-btn {
       width: 100%;
@@ -270,6 +345,17 @@
     .panel-heading-title:hover {
       color: var(--accent);
     }
+    .panel-heading-collapse-icon {
+      display: inline-block;
+      width: 1em;
+      margin-right: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      vertical-align: middle;
+    }
+    .panel-heading-title:hover .panel-heading-collapse-icon {
+      color: var(--accent);
+    }
     .panel-heading-actions {
       display: inline-flex;
       align-items: center;
@@ -382,50 +468,297 @@
       word-break: break-word;
       line-height: 1.45;
     }
+    .hint-wrap {
+      flex-shrink: 0;
+      width: 100%;
+      margin-top: 8px;
+    }
+    .hint-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin: 0;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      touch-action: manipulation;
+    }
+    .hint-toggle:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .hint-toggle-chevron {
+      font-size: 10px;
+      opacity: 0.85;
+    }
     .hint {
       flex-shrink: 0;
       width: 100%;
       box-sizing: border-box;
       font-size: 11px;
       color: var(--muted);
-      margin-top: 8px;
+      margin: 10px 0 0;
+    }
+
+    /* 手机 / 窄屏 */
+    @media (max-width: 640px) {
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        font-size: 14px;
+      }
+      header {
+        padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+        padding-top: max(10px, env(safe-area-inset-top));
+        gap: 8px 10px;
+      }
+      .header-bar {
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .header-expand-toggle {
+        flex: 0 0 auto;
+        min-height: 44px;
+      }
+      header .header-panel label {
+        flex: 1 1 100%;
+        min-width: 0;
+        gap: 8px;
+      }
+      header .header-panel input {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+        min-height: 44px;
+        font-size: 16px;
+      }
+      header .header-panel button {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 44px;
+        padding: 10px 8px;
+        touch-action: manipulation;
+      }
+      #status {
+        flex: 1 1 auto;
+        margin-left: auto;
+        text-align: right;
+        min-width: 0;
+        padding-bottom: 0;
+      }
+      main {
+        padding: 8px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+        gap: 0;
+      }
+      .layout-grid {
+        gap: 10px;
+      }
+      .files-aside {
+        max-height: min(36vh, 260px);
+        padding: 8px;
+      }
+      .files-aside.files-aside-collapsed {
+        max-height: none;
+      }
+      .files-aside-heading {
+        font-size: 11px;
+      }
+      .file-tree-panel {
+        font-size: 12px;
+      }
+      .file-tree-li {
+        margin: 4px 0 8px;
+      }
+      .file-dir summary {
+        min-height: 40px;
+        padding: 4px 0;
+        align-items: center;
+        display: flex;
+      }
+      .file-leaf-click {
+        padding: 6px 0;
+        display: inline-block;
+      }
+      .fetch-files-btn {
+        min-height: 44px;
+        touch-action: manipulation;
+      }
+      .panel-heading-fs {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .panel-heading-title {
+        flex: none;
+        line-height: 1.35;
+      }
+      h2 .preview-sub {
+        display: block;
+        margin-top: 4px;
+        word-break: break-all;
+      }
+      .panel-heading-actions {
+        margin-left: 0;
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        align-items: stretch;
+        gap: 8px;
+      }
+      .log-filter-label {
+        flex: 1 1 100%;
+        min-width: 0;
+        white-space: normal;
+        align-items: center;
+      }
+      .log-filter-label input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        min-height: 44px;
+        font-size: 16px;
+      }
+      .panel-heading-actions .heading-icon-btn,
+      .panel-heading-actions .heading-text-btn {
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 12px;
+        touch-action: manipulation;
+      }
+      .panel-heading-fs .fs-hint {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: manipulation;
+      }
+      #file-preview,
+      #log {
+        font-size: 13px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .preview-meta dl {
+        grid-template-columns: 1fr;
+        gap: 2px 0;
+      }
+      .preview-meta dt {
+        margin-top: 6px;
+      }
+      .preview-meta dt:first-child {
+        margin-top: 0;
+      }
+      .preview-meta dd {
+        word-break: break-all;
+      }
+      .hint-wrap {
+        margin-top: 6px;
+      }
+      .hint-toggle {
+        min-height: 44px;
+        font-size: 13px;
+      }
+      .hint {
+        font-size: 12px;
+        line-height: 1.5;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+      }
+      .hint code {
+        word-break: break-all;
+      }
     }
   </style>
 </head>
 <body>
   <div id="app">
     <header>
-      <label>token <input v-model="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
-      <label>groupId <input v-model="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
-      <label>WS 路径 <input v-model="wsPath" type="text" title="握手路径" /></label>
-      <button type="button" @click="connect">连接</button>
-      <button type="button" class="danger" :disabled="!canDisconnect" @click="disconnect">断开</button>
-      <button type="button" class="secondary" @click="bindGroup">绑定</button>
-      <span id="status" :class="statusClass">{{ statusText }}</span>
+      <div class="header-bar">
+        <button
+          type="button"
+          class="header-expand-toggle"
+          :aria-expanded="headerExpanded"
+          aria-controls="app-header-panel"
+          @click="headerExpanded = !headerExpanded"
+        >
+          {{ headerExpanded ? '收起连接设置' : '连接设置' }}
+          <span class="hint-toggle-chevron" aria-hidden="true">{{ headerExpanded ? '▲' : '▼' }}</span>
+        </button>
+        <span id="status" :class="statusClass">{{ statusText }}</span>
+      </div>
+      <div v-show="headerExpanded" id="app-header-panel" class="header-panel">
+        <label>token <input v-model="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
+        <label>groupId <input v-model="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
+        <label>WS 路径 <input v-model="wsPath" type="text" title="握手路径" /></label>
+        <button type="button" @click="connect">连接</button>
+        <button type="button" class="danger" :disabled="!canDisconnect" @click="disconnect">断开</button>
+        <button type="button" class="secondary" @click="bindGroup">绑定</button>
+      </div>
     </header>
     <main>
-      <div class="layout-grid">
-        <aside class="files-aside">
-          <h2>Tail 采集文件</h2>
-          <button type="button" class="secondary fetch-files-btn" :disabled="fetchFilesBusy" @click="fetchApiFiles">获取文件</button>
-          <div class="file-tree-panel">
+      <div class="layout-grid" :class="{ 'layout-grid-files-collapsed': filesContentHidden }">
+        <aside class="files-aside" :class="{ 'files-aside-collapsed': filesContentHidden }">
+          <h2
+            class="files-aside-heading"
+            role="button"
+            tabindex="0"
+            :title="filesContentHidden ? '点击展开文件列表' : '点击隐藏文件列表'"
+            :aria-expanded="!filesContentHidden"
+            @click="filesContentHidden = !filesContentHidden"
+            @keydown.enter.prevent="filesContentHidden = !filesContentHidden"
+            @keydown.space.prevent="filesContentHidden = !filesContentHidden"
+          >
+            <span class="panel-heading-collapse-icon" aria-hidden="true">{{ filesContentHidden ? '▸' : '▾' }}</span>
+            Tail 采集文件
+          </h2>
+          <button
+            v-show="!filesContentHidden"
+            type="button"
+            class="secondary fetch-files-btn"
+            :disabled="fetchFilesBusy"
+            @click="fetchApiFiles"
+          >
+            获取文件
+          </button>
+          <div v-show="!filesContentHidden" class="file-tree-panel">
             <p v-if="filePanelHint" class="hint-li">{{ filePanelHint }}</p>
             <p v-else-if="filePanelError" class="err-li">{{ filePanelError }}</p>
             <file-tree-node v-else-if="fileTreeRoot.children.length" :node="fileTreeRoot" :is-root="true" :pick-file="openFilePreview" />
           </div>
         </aside>
         <div class="right-stack">
-          <div class="preview-column" ref="previewColumnEl">
+          <div class="preview-column" ref="previewColumnEl" :class="{ 'panel-collapsed': previewContentHidden }">
             <h2 class="panel-heading-fs">
-              <span class="panel-heading-title" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('preview')">
+              <span
+                class="panel-heading-title"
+                role="button"
+                tabindex="0"
+                :title="previewContentHidden ? '点击展开内容' : '点击隐藏内容（全屏请点 ⛶）'"
+                :aria-expanded="!previewContentHidden"
+                @click="previewContentHidden = !previewContentHidden"
+                @keydown.enter.prevent="previewContentHidden = !previewContentHidden"
+                @keydown.space.prevent="previewContentHidden = !previewContentHidden"
+              >
+                <span class="panel-heading-collapse-icon" aria-hidden="true">{{ previewContentHidden ? '▸' : '▾' }}</span>
                 文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedMachineId ? selectedMachineId + ' · ' : '' }}{{ selectedFilePath }}</span>
               </span>
               <span class="panel-heading-actions">
                 <button type="button" class="heading-icon-btn" title="下载当前正文" @click.stop="downloadPreviewContent">⬇</button>
-                <span class="fs-hint" title="全屏" aria-hidden="true" @click.stop="togglePanelFullscreen('preview')">⛶</span>
+                <span class="fs-hint" title="全屏（Esc 退出）" aria-hidden="true" @click.stop="togglePanelFullscreen('preview')">⛶</span>
               </span>
             </h2>
-            <div id="file-preview" ref="previewEl">
+            <div v-show="!previewContentHidden" id="file-preview" ref="previewEl">
               <p v-if="previewWaiting" class="preview-wait">正在通过 tail-cli 流式读取…</p>
               <p v-if="previewError" class="preview-err">{{ previewError }}</p>
               <div v-if="previewHeader" class="preview-meta">
@@ -440,33 +773,55 @@
                 <div v-if="previewBanner" class="preview-banner">{{ previewBanner }}</div>
                 <pre class="preview-body">{{ previewBodyText }}</pre>
               </template>
-              <p v-if="!previewWaiting && !previewError && !previewHeader && !selectedFilePath" class="preview-wait">点击左侧树中的文件路径查看内容（≤10 MiB）</p>
+              <p v-if="!previewWaiting && !previewError && !previewHeader && !selectedFilePath" class="preview-wait">在文件列表中点击路径查看内容（≤10 MiB）</p>
             </div>
           </div>
-          <div class="log-column" ref="logColumnEl">
+          <div class="log-column" ref="logColumnEl" :class="{ 'panel-collapsed': logContentHidden }">
             <h2 class="panel-heading-fs">
-              <span class="panel-heading-title" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('log')">
+              <span
+                class="panel-heading-title"
+                role="button"
+                tabindex="0"
+                :title="logContentHidden ? '点击展开内容' : '点击隐藏内容（全屏请点 ⛶）'"
+                :aria-expanded="!logContentHidden"
+                @click="logContentHidden = !logContentHidden"
+                @keydown.enter.prevent="logContentHidden = !logContentHidden"
+                @keydown.space.prevent="logContentHidden = !logContentHidden"
+              >
+                <span class="panel-heading-collapse-icon" aria-hidden="true">{{ logContentHidden ? '▸' : '▾' }}</span>
                 组播日志（非 open: 消息）
               </span>
               <span class="panel-heading-actions">
                 <label class="log-filter-label">过滤 <input v-model="filterKeyword" type="search" autocomplete="off" placeholder="机器 id、路径或行，空=全部" title="匹配横幅 ==&gt; 机器 · 路径 &lt;== 中的机器/路径，或正文行（不区分大小写；路径按 / 规范化匹配）" @click.stop /></label>
                 <button type="button" class="heading-text-btn" title="清空组播日志列表" @click.stop="clearLog">清空日志</button>
                 <button type="button" class="heading-icon-btn" title="下载组播日志" @click.stop="downloadLogContent">⬇</button>
-                <span class="fs-hint" title="全屏" aria-hidden="true" @click.stop="togglePanelFullscreen('log')">⛶</span>
+                <span class="fs-hint" title="全屏（Esc 退出）" aria-hidden="true" @click.stop="togglePanelFullscreen('log')">⛶</span>
               </span>
             </h2>
-            <div id="log" ref="logEl">
+            <div v-show="!logContentHidden" id="log" ref="logEl">
               <div v-for="(line, i) in logLines" :key="i">{{ line }}</div>
             </div>
           </div>
         </div>
       </div>
-      <p class="hint">
-        打开示例：<code>?token=…&amp;groupId=group1</code>。
-        收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
-        左侧 <strong>获取文件</strong> 请求 <code>GET /api/files?_id=…</code>；点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
-        日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
-      </p>
+      <div class="hint-wrap">
+        <button
+          type="button"
+          class="hint-toggle"
+          :aria-expanded="hintExpanded"
+          aria-controls="app-hint-panel"
+          @click="hintExpanded = !hintExpanded"
+        >
+          使用说明
+          <span class="hint-toggle-chevron" aria-hidden="true">{{ hintExpanded ? '▲' : '▼' }}</span>
+        </button>
+        <p v-show="hintExpanded" id="app-hint-panel" class="hint">
+          打开示例：<code>?token=…&amp;groupId=group1</code>。
+          收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
+          <strong>绑定</strong>成功（<code>code: 0</code>）后会自动请求 <code>GET /api/files?_id=…</code>；亦可手动点左侧 <strong>获取文件</strong>。点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
+          日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
+        </p>
+      </div>
     </main>
   </div>
 
@@ -704,6 +1059,11 @@
       const groupId = ref(qs.get('groupId') || '');
       const wsPath = ref(qs.get('wsPath') || '/');
       const filterKeyword = ref(qs.get('filter') || '');
+      const hintExpanded = ref(false);
+      const headerExpanded = ref(false);
+      const previewContentHidden = ref(false);
+      const logContentHidden = ref(false);
+      const filesContentHidden = ref(false);
 
       const statusText = ref('未连接');
       const statusClass = ref('');
@@ -838,6 +1198,11 @@
         if (cur === el) {
           exitFullscreenDoc();
           return;
+        }
+        if (which === 'preview') {
+          previewContentHidden.value = false;
+        } else {
+          logContentHidden.value = false;
         }
         function enter() {
           const req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -1146,6 +1511,16 @@
         return groupId.value.trim() !== '';
       }
 
+      function isJoinGroupByIdResponseOk(res, j) {
+        if (!res.ok) {
+          return false;
+        }
+        if (!j || typeof j !== 'object' || j.raw === true) {
+          return false;
+        }
+        return Number(j.code) === 0;
+      }
+
       async function postJoinGroupBy_Id(_id) {
         const tok = token.value.trim();
         const gid = groupId.value.trim();
@@ -1168,6 +1543,9 @@
             return { raw: true };
           });
           appendLog('[POST] joinGroupBy_Id → ' + res.status + ' ' + JSON.stringify(j));
+          if (isJoinGroupByIdResponseOk(res, j)) {
+            await fetchApiFiles();
+          }
         } catch (e) {
           appendLog('[POST] 失败: ' + e.message);
         }
@@ -1424,6 +1802,11 @@
         groupId,
         wsPath,
         filterKeyword,
+        hintExpanded,
+        headerExpanded,
+        previewContentHidden,
+        logContentHidden,
+        filesContentHidden,
         statusText,
         statusClass,
         logLines,
