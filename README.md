@@ -57,6 +57,28 @@ php websocket.php group1 0.0.0.0:8099 cliCollectors
 - PHP 8.x、Composer
 - 目录监听 tail 功能依赖 **inotify**（Linux；Docker 镜像已包含相关扩展）
 
+### inotify 监听实例上限（Linux）
+
+监视目录/文件过多时，可能受内核 **`max_user_instances`**（每用户 inotify 实例数）限制。当前值可查：
+
+```bash
+cat /proc/sys/fs/inotify/max_user_instances
+```
+
+持久调大（示例 **`65532`**）：编辑 **`/etc/sysctl.conf`**，增加或修改一行：
+
+```text
+fs.inotify.max_user_instances = 65532
+```
+
+保存后生效：
+
+```bash
+sysctl -p
+```
+
+（亦可用 `sysctl -w fs.inotify.max_user_instances=65532` 临时生效，重启后丢失。若仍报错，可再查看 **`max_user_watches`**：`cat /proc/sys/fs/inotify/max_user_watches`。）
+
 ## 安装
 
 ```bash
