@@ -2,13 +2,16 @@
 
 require __DIR__ . '/vendor/autoload.php';
 
-if ($argc < 3) {
-    fwrite(STDERR, "Usage: php websocket.php <group> <listen>\n");
-    fwrite(STDERR, "Example: php websocket.php group1 0.0.0.0:8090\n");
+if ($argc < 4) {
+    fwrite(STDERR, "Usage: php websocket.php <group> <listen> <cliGroup>\n");
+    fwrite(STDERR, "Example: php websocket.php group1 0.0.0.0:8090 cliCollectors\n");
+    fwrite(STDERR, "  group    WebSocket 组播组（tail 上报日志发往该组）\n");
+    fwrite(STDERR, "  cliGroup tail-cli 通过 joinGroupBy_Id 先入组后再开始 tail 的目标组\n");
     exit(1);
 }
 $group = $argv[1];
 $listen = $argv[2];
+$cliGroup = $argv[3];
 
 use React\EventLoop\Loop;
 use React\Promise\Deferred;
@@ -93,5 +96,5 @@ $http = new React\Http\HttpServer(
     new WebsocketMiddleware(new WebsocketGroupComponent($connectionGroup))
 );
 $socket = new React\Socket\SocketServer($listen);
-echo 'Server running at ' . $listen . ' (group: ' . $group . ')' . PHP_EOL;
+echo 'Server running at ' . $listen . ' (broadcast group: ' . $group . ', cliGroup: ' . $cliGroup . ')' . PHP_EOL;
 $http->listen($socket);

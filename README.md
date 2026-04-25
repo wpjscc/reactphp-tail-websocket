@@ -4,11 +4,12 @@ docker push registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
 ```
 
 ```
-php websocket.php group1 0.0.0.0:8099
-php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --name "*.log" /var/log
+php websocket.php group1 0.0.0.0:8099 cliCollectors
+php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollectors --name "*.log" /var/log
 
 http://10.10.10.2:8099/index?groupId=group1&token=xxx
 ```
+（页面里 **groupId** 填 **组播组** `group1`；**cliGroup** 仅给 tail-cli 入组用。）
 
 # reactphp-tail-websocket
 
@@ -28,16 +29,17 @@ composer install
 ## 启动 WebSocket / HTTP 服务
 
 ```bash
-php websocket.php <groupId> <listen>
+php websocket.php <groupId> <listen> <cliGroup>
 ```
 
-- **groupId**：组播组名（例如 `group1`），与浏览器 `joinGroupBy_Id` / `sendToGroup` 使用的一致。
+- **groupId**：日志 **组播** 组名（例如 `group1`），`sendToGroup` 与浏览器 `joinGroupBy_Id` 填此组即可收日志。
 - **listen**：监听地址（例如 `0.0.0.0:8090`）。
+- **cliGroup**：**tail-cli 专用**；tail 进程连上 WebSocket 后先对 HTTP `joinGroupBy_Id` 入此组，**成功后才启动 inotify tail**。
 
 示例：
 
 ```bash
-php websocket.php group1 0.0.0.0:8090
+php websocket.php group1 0.0.0.0:8090 cliCollectors
 ```
 
 ### 环境变量 `TOKEN`（可选）
@@ -46,7 +48,7 @@ php websocket.php group1 0.0.0.0:8090
 
 ```bash
 export TOKEN=mysecret,other
-php websocket.php group1 0.0.0.0:8090
+php websocket.php group1 0.0.0.0:8090 cliCollectors
 ```
 
 ## HTTP 路由
@@ -80,13 +82,14 @@ php websocket.php group1 0.0.0.0:8090
 在跟踪文件的同时把日志推到 WebSocket：
 
 ```bash
-php examples/tail-cli.php --ws-url ws://127.0.0.1:8090/ -n 20 /path/to/app.log
-php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --name "*.log" /var/log
+php examples/tail-cli.php --ws-url ws://127.0.0.1:8090/ --cli-group cliCollectors -n 20 /path/to/app.log
+php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollectors --name "*.log" /var/log
 ```
 
-- **`--ws-url`**：必选，WebSocket 地址（客户端请使用可路由 IP/主机名，不要用 `0.0.0.0`）。
-- 每 **30 秒**发送文本 `ping`；断线后自动重连。
-- 文件切换横幅与增量内容会 **Base64 编码** 后发送。
+- **`--ws-url`**：必选，WebSocket 地址（不要用 `0.0.0.0` 作客户端目标）。
+- **`--cli-group`**：必选，须与 `websocket.php` 的 **cliGroup** 一致；收到 `open:` 后向同源 HTTP `POST /` 执行 `joinGroupBy_Id`，**成功后才 `tail->start()`**。
+- 若服务端配置了 **`TOKEN`**，tail-cli 会取 **`TOKEN` 环境变量中逗号分隔的第一段** 作为 POST 的 `token`。
+- 每 **30 秒**发送文本 `ping`；断线后自动重连；日志 **Base64** 后发到 **组播组 groupId**。
 
 其它选项与 GNU tail 类似：`-n` / `--lines`、`-s` 目录扫描间隔、`--name` 通配等，见脚本内 `--help`。
 
@@ -100,7 +103,7 @@ docker build -t reactphp-tail-websocket .
 
 ```bash
 docker run --rm -p 8090:8090 -e TOKEN=secret reactphp-tail-websocket \
-  php websocket.php group1 0.0.0.0:8090
+  php websocket.php group1 0.0.0.0:8090 cliCollectors
 ```
 
 （按实际端口、组名调整。）
