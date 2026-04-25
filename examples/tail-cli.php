@@ -159,7 +159,7 @@ if ($te !== false && $te !== '') {
 }
 
 $browser = new Browser();
-$bandwidth = new \ReactphpX\Bandwidth\Bandwidth(1024 * 1024 * 512, 1024 * 1024 * 256);
+$bandwidth = new \ReactphpX\Bandwidth\Bandwidth(1024 * 1024 * 150, 1024 * 1024 * 50);
 
 $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
     \Ratchet\Client\connect($wsUrl)->then(
