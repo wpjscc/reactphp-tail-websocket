@@ -164,6 +164,7 @@ $bandwidth = new \ReactphpX\Bandwidth\Bandwidth(1024 * 512, 1024 * 512);
 $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $paths, $names, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
     \Ratchet\Client\connect($wsUrl)->then(
         function (\Ratchet\Client\WebSocket $conn) use (&$connectWs, &$ws, $tail, &$tailStarted, $paths, $names, $wsUrl, $cliGroup, $httpToken, $browser, $bandwidth, $machineId) {
+            echo 'connect to websocket: ' . $wsUrl . PHP_EOL;
             if ($ws['pingTimer'] !== null) {
                 Loop::cancelTimer($ws['pingTimer']);
             }
@@ -403,7 +404,8 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                 );
             });
 
-            $conn->on('close', function ($code, $reason) use (&$connectWs, &$ws) {
+            $conn->on('close', function ($code, $reason) use (&$connectWs, &$ws, $wsUrl) {
+                echo 'close websocket: ' . $wsUrl . PHP_EOL;
                 $ws['send'] = static function (string $payload): void {
                 };
                 if ($ws['pingTimer'] !== null) {

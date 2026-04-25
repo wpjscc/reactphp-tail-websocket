@@ -1,19 +1,56 @@
-```
-docker build -t registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log . -f Dockerfile
-docker push registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
-```
-
-```
-php websocket.php group1 0.0.0.0:8099 cliCollectors
-php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollectors --name "*.log" /var/log
-
-http://10.10.10.2:8099/index?groupId=group1&token=xxx
-```
-（页面里 **groupId** 填 **组播组** `group1`；**cliGroup** 仅给 tail-cli 入组用。）
-
 # reactphp-tail-websocket
 
 基于 [ReactPHP](https://reactphp.org/) 的 WebSocket 组播服务：把 `tail -f` 风格的日志流通过 WebSocket 推到同一组内的所有连接，并附带浏览器调试页与 HTTP 绑定接口。
+
+## 快速开始（镜像 `wpjscc/reacphp-x-websocket-log`）
+
+以下与本地执行 `php websocket.php group1 0.0.0.0:8099 cliCollectors` 等价，监听 **8099**，组播组 **group1**，tail-cli 入组名 **cliCollectors**：
+
+```bash
+docker run --rm -p 8099:8099 \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php websocket.php group1 0.0.0.0:8099 cliCollectors
+```
+
+**tail-cli** 可在宿主机直接跑，也可用**同一镜像**在容器里跑（需把待采集目录挂进容器）。宿主机示例：
+
+```bash
+php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollectors --name "*.log" /var/log
+```
+
+**tail-cli（Docker，镜像 `wpjscc/reacphp-x-websocket-log`）**：服务端若与 tail 容器在同一台物理机、且 8099 映射在宿主机上，可用 `host.docker.internal`（Linux 需加 `--add-host=host.docker.internal:host-gateway`）：
+
+```bash
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v /var/log:/var/log:ro \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php examples/tail-cli.php \
+    --ws-url ws://host.docker.internal:8099/ \
+    --cli-group cliCollectors \
+    --name "*.log" \
+    /var/log
+```
+
+服务端在**其它机器**（例如 `10.10.10.2`）时，`--ws-url` 与宿主机跑 PHP 时相同；未配置 `TOKEN` 可去掉 `-e TOKEN`。采集目录按实际修改 `-v` 与最后的路径参数。
+
+浏览器打开：
+
+```
+http://10.10.10.2:8099/index?groupId=group1&token=xxx
+```
+
+（页面里 **groupId** 填 **组播组** `group1`；**cliGroup** 仅给 tail-cli 入组用。未配置 `TOKEN` 时可去掉 URL 中的 `token` 与上面的 `-e TOKEN`。）
+
+---
+
+本地源码直接跑（与上文 Docker 示例同一套参数）：
+
+```bash
+php websocket.php group1 0.0.0.0:8099 cliCollectors
+```
 
 ## 依赖
 
@@ -89,6 +126,35 @@ php examples/tail-cli.php --ws-url ws://127.0.0.1:8090/ --cli-group cliCollector
 php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollectors --name "*.log" /var/log
 ```
 
+使用预构建镜像 **`wpjscc/reacphp-x-websocket-log`** 跑 tail-cli（工作目录已为 `/var/www`，含 `examples/tail-cli.php`）：
+
+```bash
+# 服务端在本机 Docker、端口映射到宿主机 8099
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v /var/log:/var/log:ro \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php examples/tail-cli.php \
+    --ws-url ws://host.docker.internal:8099/ \
+    --cli-group cliCollectors \
+    --name "*.log" \
+    /var/log
+```
+
+```bash
+# 服务端在其它主机（与本地 PHP 示例相同，仅多卷挂载）
+docker run --rm \
+  -v /var/log:/var/log:ro \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php examples/tail-cli.php \
+    --ws-url ws://10.10.10.2:8099/ \
+    --cli-group cliCollectors \
+    --name "*.log" \
+    /var/log
+```
+
 - **`--ws-url`**：必选，WebSocket 地址（不要用 `0.0.0.0` 作客户端目标）。
 - **`--cli-group`**：必选，须与 `websocket.php` 的 **cliGroup** 一致；收到 `open:` 后向同源 HTTP `POST /` 执行 `joinGroupBy_Id`，**成功后才 `tail->start()`**。
 - 若服务端配置了 **`TOKEN`**，tail-cli 会取 **`TOKEN` 环境变量中逗号分隔的第一段** 作为 POST 的 `token`。
@@ -99,18 +165,56 @@ php examples/tail-cli.php --ws-url ws://10.10.10.2:8099/ --cli-group cliCollecto
 
 ## Docker
 
+### 使用预构建镜像 `wpjscc/reacphp-x-websocket-log`
+
+拉取并运行（与文首 **8099 / group1 / cliCollectors** 示例一致）：
+
+```bash
+docker pull wpjscc/reacphp-x-websocket-log
+
+docker run --rm -p 8099:8099 \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php websocket.php group1 0.0.0.0:8099 cliCollectors
+```
+
+按需改端口映射（如 `-p 8090:8090`）、`TOKEN` 及 `websocket.php` 的三个参数。
+
+### 同一镜像运行 tail-cli
+
+镜像内已含 **inotify** 与 `examples/tail-cli.php`，把日志目录挂入容器即可（**`--cli-group` 须与上方 `websocket.php` 第三个参数一致**）：
+
+```bash
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v /var/log:/var/log:ro \
+  -e TOKEN=xxx \
+  wpjscc/reacphp-x-websocket-log \
+  php examples/tail-cli.php \
+    --ws-url ws://host.docker.internal:8099/ \
+    --cli-group cliCollectors \
+    --name "*.log" \
+    /var/log
+```
+
+WebSocket 服务不在本机时，将 `--ws-url` 改为可达地址（如 `ws://10.10.10.2:8099/`），并视情况去掉 `--add-host`。需要 **`--network host`** 时（Linux 下让容器直接使用宿主机网络）可自行改用 `ws://127.0.0.1:8099/` 并评估安全与端口冲突。
+
+### 自行构建（阿里云仓库示例）
+
+```bash
+docker build -t registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log . -f Dockerfile
+docker push registry.cn-shanghai.aliyuncs.com/wpjscc/reacphp-x-websocket-log
+```
+
+或本地标签：
+
 ```bash
 docker build -t reactphp-tail-websocket .
+docker run --rm -p 8099:8099 reactphp-tail-websocket \
+  php websocket.php group1 0.0.0.0:8099 cliCollectors
 ```
 
-镜像内执行 `composer install` 后，工作目录为 `/var/www`。运行容器时需自行指定启动命令，例如：
-
-```bash
-docker run --rm -p 8090:8090 -e TOKEN=secret reactphp-tail-websocket \
-  php websocket.php group1 0.0.0.0:8090 cliCollectors
-```
-
-（按实际端口、组名调整。）
+镜像内已执行 `composer install`，工作目录为 **`/var/www`**；运行容器时通过命令传入 `websocket.php` 参数。
 
 ## 仓库结构（主要文件）
 

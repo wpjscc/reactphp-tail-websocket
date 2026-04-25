@@ -25,6 +25,7 @@ $connectionGroup = SingleConnectionGroup::instance();
 // $connectionGroup = new ConnectionGroup;
 
 $connectionGroup->on('open', function ($conn, $request) use ($connectionGroup) {
+    echo 'open: ' . $conn->_id . PHP_EOL;
     $connectionGroup->sendMessageTo_id($conn->_id, 'open:' . $conn->_id);
 });
 
@@ -62,7 +63,7 @@ $connectionGroup->on('message', function ($from, $msg) use ($connectionGroup, $g
 });
 
 $connectionGroup->on('close', function ($conn, $reason) {
-    var_dump('close', $conn->_id, $reason);
+    echo 'close: ' . $conn->_id . PHP_EOL;
 });
 
 
