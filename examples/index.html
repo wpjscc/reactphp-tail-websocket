@@ -36,6 +36,7 @@
       flex-direction: column;
     }
     header {
+      flex-shrink: 0;
       padding: 12px 16px;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
@@ -88,14 +89,18 @@
     #status.ok { color: var(--accent); }
     #status.err { color: #f85149; }
     main {
-      flex: 0 0 auto;
+      flex: 1 1 0;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       padding: 12px 16px;
     }
     .layout-grid {
+      flex: 1 1 0;
+      min-height: 0;
       display: grid;
       grid-template-columns: 280px 1fr;
+      grid-template-rows: minmax(0, 1fr);
       gap: 14px;
       align-items: stretch;
     }
@@ -105,7 +110,7 @@
       gap: 12px;
       min-width: 0;
       min-height: 0;
-      height: min(680px, calc(100vh - 140px));
+      height: 100%;
     }
     .preview-column,
     .log-column {
@@ -115,14 +120,17 @@
       flex-direction: column;
     }
     @media (max-width: 900px) {
-      .layout-grid { grid-template-columns: 1fr; }
+      .layout-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
     }
     .files-aside {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 10px;
-      max-height: min(680px, calc(100vh - 140px));
+      min-height: 0;
       overflow: auto;
     }
     .files-aside h2 {
@@ -375,10 +383,12 @@
       line-height: 1.45;
     }
     .hint {
+      flex-shrink: 0;
+      width: 100%;
+      box-sizing: border-box;
       font-size: 11px;
       color: var(--muted);
       margin-top: 8px;
-      max-width: 72ch;
     }
   </style>
 </head>
