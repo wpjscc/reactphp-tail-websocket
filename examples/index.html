@@ -233,7 +233,7 @@
     }
     .panel-heading-fs {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 8px;
       flex-wrap: wrap;
@@ -243,22 +243,50 @@
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      cursor: pointer;
       user-select: none;
     }
-    .panel-heading-fs:hover {
+    .panel-heading-title {
+      cursor: pointer;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .panel-heading-title:hover {
       color: var(--accent);
     }
-    .panel-heading-fs .fs-hint {
+    .panel-heading-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
       margin-left: auto;
+    }
+    .panel-heading-actions .heading-icon-btn {
+      appearance: none;
+      margin: 0;
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.2;
+      cursor: pointer;
+    }
+    .panel-heading-actions .heading-icon-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .panel-heading-fs .fs-hint {
       color: var(--muted);
       font-size: 13px;
       font-weight: normal;
       text-transform: none;
       letter-spacing: 0;
       opacity: 0.75;
+      cursor: pointer;
+      padding: 2px 4px;
     }
-    .panel-heading-fs:hover .fs-hint {
+    .panel-heading-fs .fs-hint:hover {
       opacity: 1;
       color: var(--accent);
     }
@@ -328,9 +356,14 @@
         </aside>
         <div class="right-stack">
           <div class="preview-column" ref="previewColumnEl">
-            <h2 class="panel-heading-fs" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('preview')">
-              <span>文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span></span>
-              <span class="fs-hint" aria-hidden="true">⛶</span>
+            <h2 class="panel-heading-fs">
+              <span class="panel-heading-title" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('preview')">
+                文件内容 <span v-if="selectedFilePath" class="preview-sub">{{ selectedFilePath }}</span>
+              </span>
+              <span class="panel-heading-actions">
+                <button type="button" class="heading-icon-btn" title="下载当前正文" @click.stop="downloadPreviewContent">⬇</button>
+                <span class="fs-hint" title="全屏" aria-hidden="true" @click.stop="togglePanelFullscreen('preview')">⛶</span>
+              </span>
             </h2>
             <div id="file-preview" ref="previewEl">
               <p v-if="previewWaiting" class="preview-wait">正在通过 tail-cli 流式读取…</p>
@@ -351,9 +384,14 @@
             </div>
           </div>
           <div class="log-column" ref="logColumnEl">
-            <h2 class="panel-heading-fs" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('log')">
-              <span>组播日志（非 open: 消息）</span>
-              <span class="fs-hint" aria-hidden="true">⛶</span>
+            <h2 class="panel-heading-fs">
+              <span class="panel-heading-title" title="点击全屏；Esc 退出" @click="togglePanelFullscreen('log')">
+                组播日志（非 open: 消息）
+              </span>
+              <span class="panel-heading-actions">
+                <button type="button" class="heading-icon-btn" title="下载组播日志" @click.stop="downloadLogContent">⬇</button>
+                <span class="fs-hint" title="全屏" aria-hidden="true" @click.stop="togglePanelFullscreen('log')">⛶</span>
+              </span>
             </h2>
             <div id="log" ref="logEl">
               <div v-for="(line, i) in logLines" :key="i">{{ line }}</div>
@@ -722,6 +760,63 @@
             }
           });
         }
+      }
+
+      function triggerTextDownload(text, filename) {
+        if (typeof text !== 'string' || text.length === 0) {
+          return false;
+        }
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return true;
+      }
+
+      function previewDownloadFilename() {
+        const p = selectedFilePath.value.trim();
+        if (!p) {
+          return 'file-preview.txt';
+        }
+        let base = p.replace(/\\/g, '/').split('/').pop() || 'preview';
+        base = base.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 180);
+        if (!base) {
+          base = 'preview';
+        }
+        return base + '.txt';
+      }
+
+      function downloadPreviewContent() {
+        const parts = [];
+        if (previewBanner.value) {
+          parts.push(previewBanner.value);
+        }
+        if (previewBodyText.value) {
+          parts.push(previewBodyText.value);
+        }
+        if (previewError.value && parts.length === 0) {
+          parts.push(previewError.value);
+        }
+        const text = parts.join('');
+        if (!triggerTextDownload(text, previewDownloadFilename())) {
+          appendLog('[下载] 文件内容为空');
+        }
+      }
+
+      function downloadLogContent() {
+        if (!logLines.value.length) {
+          appendLog('[下载] 组播日志为空');
+          return;
+        }
+        const text = logLines.value.join('\n');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        triggerTextDownload(text, 'multicast-log-' + stamp + '.txt');
       }
 
       function setStatus(text, cls) {
@@ -1180,6 +1275,8 @@
         previewColumnEl,
         logColumnEl,
         togglePanelFullscreen,
+        downloadPreviewContent,
+        downloadLogContent,
         canDisconnect,
         fetchFilesBusy,
         fileTreeRoot,
