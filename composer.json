@@ -1,0 +1,7 @@
+{
+    "require": {
+        "reactphp-x/tail": "^1.0",
+        "reactphp-x/websocket-group": "^1.0",
+        "ratchet/pawl": "0.4.1"
+    }
+}

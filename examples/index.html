@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebSocket 日志</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #3fb950;
+      --warn: #d29922;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 12px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      align-items: center;
+    }
+    header label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+    }
+    header input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 4px;
+      min-width: 8rem;
+    }
+    header button {
+      background: var(--accent);
+      color: #0f1419;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    header button.secondary {
+      background: var(--panel);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    header button.danger {
+      background: var(--panel);
+      color: #f85149;
+      border: 1px solid #f85149;
+    }
+    header button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-left: auto;
+      color: var(--muted);
+    }
+    #status.ok { color: var(--accent); }
+    #status.err { color: #f85149; }
+    main {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 16px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    #log {
+      height: min(480px, calc(100vh - 200px));
+      min-height: 200px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+    .hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      max-width: 72ch;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <label>token <input id="token" type="text" autocomplete="off" placeholder="与服务器 TOKEN 一致" /></label>
+    <label>id <input id="userId" type="text" value="1" /></label>
+    <label>groupId <input id="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
+    <label>WS 路径 <input id="wsPath" type="text" value="/" title="握手路径" /></label>
+    <button type="button" id="connectBtn">连接</button>
+    <button type="button" id="disconnectBtn" class="danger" disabled>断开</button>
+    <button type="button" id="bindBtn" class="secondary">绑定</button>
+    <button type="button" id="clearBtn">清空日志</button>
+    <span id="status">未连接</span>
+  </header>
+  <main>
+    <h2>组播日志（非 open: 消息）</h2>
+    <div id="log"></div>
+    <p class="hint">
+      打开示例：<code>?token=…&amp;id=1&amp;groupId=group1</code>。
+      收到 <code>open:…</code> 时，仅当 token、id、groupId 都已填写才会自动 POST；否则保持连接，补全后点「绑定」（未配置 TOKEN 的服务端可将 token 留空后再绑 id+groupId）。
+    </p>
+  </main>
+  <script>
+(function () {
+  const qs = new URLSearchParams(location.search);
+  const logEl = document.getElementById('log');
+  const statusEl = document.getElementById('status');
+  const tokenEl = document.getElementById('token');
+  const userIdEl = document.getElementById('userId');
+  const groupIdEl = document.getElementById('groupId');
+  const wsPathEl = document.getElementById('wsPath');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const bindBtn = document.getElementById('bindBtn');
+  const clearBtn = document.getElementById('clearBtn');
+
+  if (qs.get('token') != null) tokenEl.value = qs.get('token');
+  if (qs.get('id') != null) userIdEl.value = qs.get('id');
+  if (qs.get('groupId') != null) groupIdEl.value = qs.get('groupId');
+  if (qs.get('wsPath') != null) wsPathEl.value = qs.get('wsPath');
+
+  let sock = null;
+  /** 每次发起连接递增，用于忽略已被取代的旧 socket 的 onclose，避免误触发重连 */
+  let connectGen = 0;
+  let reconnectTimer = null;
+  /** 用户点击「断开」后为 true，意外断线则为 false，便于仅后者自动重连 */
+  let manualDisconnect = false;
+  /** 当前连接在服务端对应的 _id（来自最近一次 open:） */
+  let lastConnId = '';
+  /** 本段 WebSocket 连接上是否已做过一次「自动绑定」尝试（避免 ping 等再次 open: 重复自动请求） */
+  let autoBindDone = false;
+  let hintedNeedBind = false;
+
+  function clearReconnectTimer() {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  }
+
+  /** 是否在底部附近：是则新日志自动滚到底；用户往上滑则不滚 */
+  function isLogPinnedToBottom() {
+    const threshold = 12;
+    return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight <= threshold;
+  }
+
+  function logLine(text) {
+    const pin = isLogPinnedToBottom();
+    const line = document.createElement('div');
+    line.textContent = text;
+    logEl.appendChild(line);
+    if (pin) {
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || '';
+  }
+
+  function wsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let path = wsPathEl.value.trim() || '/';
+    if (!path.startsWith('/')) path = '/' + path;
+    return proto + '//' + location.host + path;
+  }
+
+  /** 自动绑定：三者齐全才触发（与「有 token 才自动」一致） */
+  function hasAutoBindParams() {
+    return (
+      tokenEl.value.trim() !== '' &&
+      userIdEl.value.trim() !== '' &&
+      groupIdEl.value.trim() !== ''
+    );
+  }
+
+  /** 手动绑定：至少 id + groupId（token 可空，适配未设置 TOKEN 的服务端） */
+  function hasManualBindParams() {
+    return userIdEl.value.trim() !== '' && groupIdEl.value.trim() !== '';
+  }
+
+  async function postBindAndJoin(_id) {
+    const token = tokenEl.value.trim();
+    const idRaw = userIdEl.value.trim();
+    const groupId = groupIdEl.value.trim();
+    if (!idRaw || !groupId) {
+      logLine('[POST] 请填写 id、groupId');
+      return;
+    }
+    const id = /^-?\d+$/.test(idRaw) ? parseInt(idRaw, 10) : idRaw;
+    const body = {
+      token: token,
+      event: 'bindId,joinGroupById',
+      bindId: { id: id, _id: _id },
+      joinGroupById: { id: id, groupId: groupId },
+    };
+    try {
+      const res = await fetch(location.origin + '/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json().catch(function () { return { raw: true }; });
+      logLine('[POST] bindId+joinGroupById → ' + res.status + ' ' + JSON.stringify(j));
+    } catch (e) {
+      logLine('[POST] 失败: ' + e.message);
+    }
+  }
+
+  function onMessage(ev) {
+    const msg = typeof ev.data === 'string' ? ev.data : '';
+    if (msg.startsWith('open:')) {
+      const _id = msg.slice(5);
+      if (_id) {
+        lastConnId = _id;
+      }
+      if (_id && hasAutoBindParams() && !autoBindDone) {
+        autoBindDone = true;
+        postBindAndJoin(_id);
+      } else if (_id && !hasAutoBindParams() && !hintedNeedBind) {
+        hintedNeedBind = true;
+        logLine('[提示] 已拿到连接 id。若需自动绑定请填齐 token、id、groupId；否则填好 id、groupId（及必要时 token）后点「绑定」');
+      }
+      return;
+    }
+    logLine(msg);
+  }
+
+  function beginConnection() {
+    connectGen += 1;
+    const gen = connectGen;
+    lastConnId = '';
+    autoBindDone = false;
+    hintedNeedBind = false;
+    if (sock) {
+      try { sock.close(); } catch (e) {}
+    }
+    setStatus('连接中…', '');
+    connectBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    const ws = new WebSocket(wsUrl());
+    sock = ws;
+    ws.onopen = function () {
+      if (sock !== ws) return;
+      setStatus('已连接', 'ok');
+      connectBtn.disabled = false;
+      disconnectBtn.disabled = false;
+    };
+    ws.onmessage = onMessage;
+    ws.onerror = function () {
+      if (sock !== ws) return;
+      setStatus('错误', 'err');
+    };
+    ws.onclose = function () {
+      if (sock !== ws) return;
+      lastConnId = '';
+      autoBindDone = false;
+      hintedNeedBind = false;
+      connectBtn.disabled = false;
+      disconnectBtn.disabled = true;
+      sock = null;
+      if (gen !== connectGen) {
+        return;
+      }
+      if (manualDisconnect) {
+        setStatus('已断开', 'err');
+        return;
+      }
+      setStatus('已断开，1 秒后重连…', 'err');
+      clearReconnectTimer();
+      reconnectTimer = setTimeout(function () {
+        reconnectTimer = null;
+        if (gen !== connectGen || manualDisconnect) return;
+        beginConnection();
+      }, 1000);
+    };
+  }
+
+  function connect() {
+    manualDisconnect = false;
+    clearReconnectTimer();
+    beginConnection();
+  }
+
+  function disconnect() {
+    manualDisconnect = true;
+    clearReconnectTimer();
+    if (!sock) return;
+    if (sock.readyState === WebSocket.CLOSING || sock.readyState === WebSocket.CLOSED) return;
+    disconnectBtn.disabled = true;
+    try { sock.close(); } catch (e) {}
+  }
+
+  connectBtn.addEventListener('click', connect);
+  disconnectBtn.addEventListener('click', disconnect);
+  bindBtn.addEventListener('click', function () {
+    if (!sock || sock.readyState !== WebSocket.OPEN) {
+      logLine('[绑定] 请先点击「连接」并保持 WebSocket 已连接');
+      return;
+    }
+    if (!lastConnId) {
+      logLine('[绑定] 尚未收到 open:，请稍候再试');
+      return;
+    }
+    if (!hasManualBindParams()) {
+      logLine('[绑定] 请填写 id、groupId（若服务端校验 token 也需填写）');
+      return;
+    }
+    postBindAndJoin(lastConnId);
+  });
+  clearBtn.addEventListener('click', function () { logEl.textContent = ''; });
+
+  connect();
+})();
+  </script>
+</body>
+</html>

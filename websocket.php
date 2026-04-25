@@ -1,0 +1,97 @@
+<?php
+
+require __DIR__ . '/vendor/autoload.php';
+
+if ($argc < 3) {
+    fwrite(STDERR, "Usage: php websocket.php <group> <listen>\n");
+    fwrite(STDERR, "Example: php websocket.php group1 0.0.0.0:8090\n");
+    exit(1);
+}
+$group = $argv[1];
+$listen = $argv[2];
+
+use React\EventLoop\Loop;
+use React\Promise\Deferred;
+use ReactphpX\WebsocketGroup\WebsocketGroupComponent;
+use ReactphpX\WebsocketGroup\WebsocketGroupMiddleware;
+use ReactphpX\ConnectionGroup\ConnectionGroup;
+use ReactphpX\ConnectionGroup\SingleConnectionGroup;
+use React\Http\Message\Response;
+use ReactphpX\WebsocketMiddleware\WebsocketMiddleware;
+use ReactphpX\TunnelStream\TunnelStream;
+use WyriHaximus\React\Stream\Json\JsonStream;
+
+$connectionGroup = SingleConnectionGroup::instance();
+// $connectionGroup = new ConnectionGroup;
+
+$connectionGroup->on('open', function ($conn, $request) use ($connectionGroup) {
+    $connectionGroup->sendMessageTo_id($conn->_id, 'open:' . $conn->_id);
+});
+
+$connectionGroup->on('message', function ($from, $msg) use ($connectionGroup, $group) {
+    if ($msg == 'ping') {
+        $connectionGroup->sendMessageTo_id($from->_id, 'open:' . $from->_id);
+    } else {
+        $connectionGroup->sendToGroup($group, base64_decode($msg), [], [$from->_id]);
+    }
+});
+
+$connectionGroup->on('close', function ($conn, $reason) {
+    var_dump('close', $conn->_id, $reason);
+});
+
+
+$websocketGroupMiddleware = new WebsocketGroupMiddleware($connectionGroup);
+$token = getenv('TOKEN');
+if ($token) {
+    $token = explode(',', $token);
+    $websocketGroupMiddleware->setTokens($token);
+}
+
+
+
+function getMemoryUsage(): array {
+        return [
+            'date' => date('Y-m-d H:i:s'),
+            'current_usage_mb' => round(memory_get_usage() / 1024 / 1024, 4),
+            'current_usage_real_mb' => round(memory_get_usage(true) / 1024 / 1024, 4),
+            'peak_usage_mb' => round(memory_get_peak_usage() / 1024 / 1024, 4),
+            'peak_usage_real_mb' => round(memory_get_peak_usage(true) / 1024 / 1024, 4),
+        ];
+    }
+
+
+    $currentMemoryUsage = getMemoryUsage();
+\React\EventLoop\Loop::addPeriodicTimer(2, function () use ($currentMemoryUsage) {
+    // Log::channel('stdout')->info('',[
+    //     'start_memory_usage' => $currentMemoryUsage,
+    //     'current_memory_usage' => getMemoryUsage(),
+    // ]); 
+    // print_r($currentMemoryUsage);
+    // print_r(getMemoryUsage());
+    // echo PHP_EOL;
+    gc_collect_cycles();
+    // print_r(getMemoryUsage());
+
+});
+
+
+
+$http = new React\Http\HttpServer(
+    function (\Psr\Http\Message\ServerRequestInterface $request, callable $next) {
+        $path = $request->getUri()->getPath();
+        if (trim($path, '/') === 'index') {
+            $file = __DIR__ . '/examples/index.html';
+            if (is_readable($file)) {
+                return Response::html(file_get_contents($file));
+            }
+            return new Response(404, ['Content-Type' => 'text/plain; charset=utf-8'], "examples/index.html not found\n");
+        }
+        return $next($request);
+    },
+    $websocketGroupMiddleware,
+    new WebsocketMiddleware(new WebsocketGroupComponent($connectionGroup))
+);
+$socket = new React\Socket\SocketServer($listen);
+echo 'Server running at ' . $listen . ' (group: ' . $group . ')' . PHP_EOL;
+$http->listen($socket);
