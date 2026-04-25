@@ -119,6 +119,7 @@
     <label>id <input id="userId" type="text" value="1" /></label>
     <label>groupId <input id="groupId" type="text" placeholder="与 websocket.php 启动参数一致" /></label>
     <label>WS 路径 <input id="wsPath" type="text" value="/" title="握手路径" /></label>
+    <label>过滤 <input id="filterKeyword" type="search" autocomplete="off" placeholder="路径或行内容，空=全部" title="匹配 tail 横幅中的路径或正文行（不区分大小写）" /></label>
     <button type="button" id="connectBtn">连接</button>
     <button type="button" id="disconnectBtn" class="danger" disabled>断开</button>
     <button type="button" id="bindBtn" class="secondary">绑定</button>
@@ -131,6 +132,7 @@
     <p class="hint">
       打开示例：<code>?token=…&amp;id=1&amp;groupId=group1</code>。
       收到 <code>open:…</code> 时，仅当 token、id、groupId 都已填写才会自动 POST；否则保持连接，补全后点「绑定」（未配置 TOKEN 的服务端可将 token 留空后再绑 id+groupId）。
+      日志流形如 <code>==> /path/to.log &lt;==</code> 时，填写「过滤」可只显示路径或行文中包含该关键词的横幅与内容（新消息生效）。
     </p>
   </main>
   <script>
@@ -142,6 +144,7 @@
   const userIdEl = document.getElementById('userId');
   const groupIdEl = document.getElementById('groupId');
   const wsPathEl = document.getElementById('wsPath');
+  const filterEl = document.getElementById('filterKeyword');
   const connectBtn = document.getElementById('connectBtn');
   const disconnectBtn = document.getElementById('disconnectBtn');
   const bindBtn = document.getElementById('bindBtn');
@@ -151,6 +154,7 @@
   if (qs.get('id') != null) userIdEl.value = qs.get('id');
   if (qs.get('groupId') != null) groupIdEl.value = qs.get('groupId');
   if (qs.get('wsPath') != null) wsPathEl.value = qs.get('wsPath');
+  if (qs.get('filter') != null) filterEl.value = qs.get('filter');
 
   let sock = null;
   /** 每次发起连接递增，用于忽略已被取代的旧 socket 的 onclose，避免误触发重连 */
@@ -158,6 +162,8 @@
   let reconnectTimer = null;
   /** 用户点击「断开」后为 true，意外断线则为 false，便于仅后者自动重连 */
   let manualDisconnect = false;
+  /** 当前 tail 文件段是否命中过滤：由最近一条 ==> path <== 横幅更新 */
+  let logSectionMatches = false;
   /** 当前连接在服务端对应的 _id（来自最近一次 open:） */
   let lastConnId = '';
   /** 本段 WebSocket 连接上是否已做过一次「自动绑定」尝试（避免 ping 等再次 open: 重复自动请求） */
@@ -241,6 +247,31 @@
     }
   }
 
+  function emitTailLogChunk(msg) {
+    const kwRaw = filterEl.value.trim();
+    if (!kwRaw) {
+      logLine(msg);
+      return;
+    }
+    const kw = kwRaw.toLowerCase();
+    const lines = msg.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const forBanner = line.replace(/\r$/, '').trim();
+      const bannerMatch = forBanner.match(/^==>\s*(.+?)\s*<==$/);
+      if (bannerMatch) {
+        const path = bannerMatch[1];
+        const hit = path.toLowerCase().includes(kw) || forBanner.toLowerCase().includes(kw);
+        logSectionMatches = hit;
+        if (hit) logLine(line);
+        continue;
+      }
+      if (logSectionMatches || line.toLowerCase().includes(kw)) {
+        logLine(line);
+      }
+    }
+  }
+
   function onMessage(ev) {
     const msg = typeof ev.data === 'string' ? ev.data : '';
     if (msg.startsWith('open:')) {
@@ -257,7 +288,7 @@
       }
       return;
     }
-    logLine(msg);
+    emitTailLogChunk(msg);
   }
 
   function beginConnection() {
@@ -266,6 +297,7 @@
     lastConnId = '';
     autoBindDone = false;
     hintedNeedBind = false;
+    logSectionMatches = false;
     if (sock) {
       try { sock.close(); } catch (e) {}
     }
