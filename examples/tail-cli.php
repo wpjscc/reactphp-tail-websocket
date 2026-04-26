@@ -9,7 +9,7 @@
  *
  * -n 0 表示不先输出末尾若干行，只跟随后续追加内容。
  * --ws-url、--cli-group 为必选；先连 WebSocket，收到 open: 后对 HTTP POST joinGroupBy_Id（与 websocket.php 的 cliGroup 一致），成功后再开始 tail；
- * 每 30 秒发送文本 ping；断线后自动重连；文件内容经 base64 发往服务端。
+ * 每 30 秒发送文本 ping；断线后自动重连；尾包为 stream: + JSON（machineId、path、bodyB64）原文发往服务端。
  * HTTP 使用与 ws 同源（TOKEN 环境变量首段作为 token，与 WebsocketGroupMiddleware 一致）。
  */
 
@@ -169,7 +169,7 @@ $connectWs = function () use (&$connectWs, $wsUrl, &$ws, $tail, &$tailStarted, $
                 Loop::cancelTimer($ws['pingTimer']);
             }
             $ws['send'] = static function (string $payload) use ($conn): void {
-                $conn->send(base64_encode($payload));
+                $conn->send($payload);
             };
             $ws['pingTimer'] = Loop::addPeriodicTimer(30.0, static function () use ($conn) {
                 $conn->send('ping');
@@ -427,13 +427,28 @@ $tail->on('start', function ($file) use (&$filePath, &$ws, $machineId) {
         $filePath = $file;
         $banner = PHP_EOL . '==> ' . $machineId . ' · ' . $filePath . ' <==' . PHP_EOL;
         // echo $banner;
-        ($ws['send'])($banner);
+        // ($ws['send'])($banner);
     }
 });
 
-$tail->on('data', function ($data) use (&$ws) {
+$tail->on('data', function ($data) use (&$ws, &$filePath, $machineId) {
+    if ($filePath === '') {
+        return;
+    }
+    if (strlen(trim($data)) === 0) {
+        return;
+    }
+    $json = json_encode(
+        [
+            'machineId' => $machineId,
+            'path' => $filePath,
+            'at' => (int) round(microtime(true) * 1000),
+            'bodyB64' => base64_encode($data),
+        ],
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    );
+    ($ws['send'])('stream:' . $json);
     // echo $data;
-    ($ws['send'])($data);
 });
 
 $tail->on('end', function ($file) {

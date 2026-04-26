@@ -402,16 +402,193 @@
       font-size: 12px;
       white-space: nowrap;
     }
-    .log-filter-label input {
+    .log-filter-label input,
+    .log-filter-label select {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
       padding: 4px 8px;
       border-radius: 4px;
-      min-width: 9rem;
-      width: min(18rem, 28vw);
+      min-width: 6rem;
+      width: min(10rem, 20vw);
       max-width: 100%;
       font: inherit;
+    }
+    .log-filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      max-width: min(100%, 48rem);
+    }
+    .log-group-h {
+      margin-top: 10px;
+      margin-bottom: 4px;
+      padding: 2px 0 4px;
+      border-bottom: 1px solid var(--border);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .log-line {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .log-line.log-sys {
+      color: var(--muted);
+    }
+    .log-stream-pfx {
+      color: var(--muted);
+    }
+    .log-stream-path {
+      color: #7ab8ff;
+    }
+    .log-stream-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 4px 8px;
+      margin-bottom: 4px;
+      line-height: 1.35;
+    }
+    .log-stream-at {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-stream-body {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin-left: 0;
+    }
+    .log-line.log-stream.log-stream--flat {
+      margin-bottom: 6px;
+    }
+    #log.log--mesh {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      white-space: normal;
+    }
+    .log-mesh-notify {
+      flex: 0 0 auto;
+      max-height: 30vh;
+      overflow-y: auto;
+      padding: 8px 10px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+    .log-mesh {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      flex: 1 1 auto;
+      min-height: 0;
+      align-content: start;
+    }
+    @media (max-width: 1000px) {
+      .log-mesh {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 520px) {
+      .log-mesh {
+        grid-template-columns: 1fr;
+      }
+    }
+    .log-mesh-cell {
+      display: flex;
+      flex-direction: column;
+      min-height: 120px;
+      max-height: min(360px, 45vh);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .log-mesh-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .log-mesh-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      line-height: 1.3;
+    }
+    .log-mesh-title-text {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .log-mesh-at {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-mesh-fs {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+      user-select: none;
+    }
+    .log-mesh-fs:hover {
+      color: var(--accent);
+    }
+    .log-mesh-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .log-mesh-line {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin-bottom: 2px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .log-mesh-line:last-child {
+      margin-bottom: 0;
+    }
+    .log-mesh-cell:fullscreen {
+      max-height: none;
+      min-height: 100%;
+      width: 100%;
+      background: var(--bg);
+    }
+    .log-mesh-cell:fullscreen .log-mesh-body {
+      flex: 1;
+    }
+    .log-mesh-cell:fullscreen .log-mesh-title-text {
+      white-space: pre-wrap;
+      text-overflow: unset;
     }
     .panel-heading-actions .heading-icon-btn {
       appearance: none;
@@ -834,17 +1011,98 @@
                 @keydown.space.prevent="logContentHidden = !logContentHidden"
               >
                 <span class="panel-heading-collapse-icon" aria-hidden="true">{{ logContentHidden ? '▸' : '▾' }}</span>
-                组播日志（非 open: 消息）
+                组播日志
               </span>
-              <span class="panel-heading-actions">
-                <label class="log-filter-label">过滤 <input v-model="filterKeyword" type="search" autocomplete="off" placeholder="机器 id、路径或行，空=全部" title="匹配横幅 ==&gt; 机器 · 路径 &lt;== 中的机器/路径，或正文行（不区分大小写；路径按 / 规范化匹配）" @click.stop /></label>
+              <span class="panel-heading-actions log-filters">
+                <label class="log-filter-label"
+                  >机器
+                  <input
+                    v-model="filterLogMachine"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="空=全部"
+                    title="子串不区分大小写；与路径一起约束「仅展示」符合条件的 tail 行；不匹配的只保留在内存、不显示"
+                    @click.stop
+                /></label>
+                <label class="log-filter-label"
+                  >路径
+                  <input
+                    v-model="filterLogPath"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="空=全部"
+                    title="子串，路径会归一；与机器一起约束；系统提示行在筛选开启时仅当全文匹配"
+                    @click.stop
+                /></label>
+                <label class="log-filter-label"
+                  >展示
+                  <select v-model="logGroupBy" title="组播行分组方式" @click.stop>
+                    <option value="none">平铺</option>
+                    <option value="machine">按机器</option>
+                    <option value="path">按路径</option>
+                    <option value="both">按机器+路径</option>
+                  </select></label
+                >
                 <button type="button" class="heading-text-btn" title="清空组播日志列表" @click.stop="clearLog">清空日志</button>
                 <button type="button" class="heading-icon-btn" title="下载组播日志" @click.stop="downloadLogContent">⬇</button>
                 <span class="fs-hint" title="全屏（Esc 退出）" aria-hidden="true" @click.stop="togglePanelFullscreen('log')">⛶</span>
               </span>
             </h2>
-            <div v-show="!logContentHidden" id="log" ref="logEl">
-              <div v-for="(line, i) in logLines" :key="i">{{ line }}</div>
+            <div
+              v-show="!logContentHidden"
+              id="log"
+              ref="logEl"
+              :class="{ 'log--mesh': logGroupBy !== 'none' }"
+            >
+              <template v-if="logGroupBy === 'none'">
+                <template v-for="row in logViewRows" :key="row._key">
+                  <div v-if="row.type === 'sys'" class="log-line log-sys">{{ row.text }}</div>
+                  <div
+                    v-else
+                    :class="['log-line', 'log-stream', { 'log-stream--flat': row.showPrefix }]"
+                  >
+                    <template v-if="row.showPrefix">
+                      <div class="log-stream-header">
+                        <span class="log-stream-pfx">[{{ row.machineId || '—' }}]</span>
+                        <span class="log-stream-path">{{ row.path }}</span>
+                        <span class="log-stream-at">{{ formatLogAtMs(row.at) }}</span>
+                      </div>
+                      <div class="log-stream-body">{{ row.text }}</div>
+                    </template>
+                    <template v-else>{{ row.text }}</template>
+                  </div>
+                </template>
+              </template>
+              <template v-else>
+                <div v-if="logStreamGroups.sys.length" class="log-mesh-notify">
+                  <div v-for="(t, si) in logStreamGroups.sys" :key="'m-sys-' + si" class="log-line log-sys">{{ t }}</div>
+                </div>
+                <div class="log-mesh" role="list">
+                  <div
+                    v-for="(g, gi) in logStreamGroups.groups"
+                    :key="'mesh-' + gi + '-' + g.key"
+                    class="log-mesh-cell"
+                    role="listitem"
+                  >
+                    <div class="log-mesh-bar">
+                      <span class="log-mesh-title" :title="g.label + (g.atLatest ? ' · 最新: ' + formatLogAtMs(g.atLatest) : '')">
+                        <span class="log-mesh-title-text">{{ g.label }}</span>
+                        <span class="log-mesh-at">{{ formatLogAtMs(g.atLatest) }}</span>
+                      </span>
+                      <span
+                        class="log-mesh-fs"
+                        title="全屏本格（Esc 退出）"
+                        @click.stop="toggleLogMeshCellFullscreen"
+                        >⛶</span
+                      >
+                    </div>
+                    <div class="log-mesh-body">
+                      <div v-for="(it, j) in g.items" :key="'m-' + gi + '-ln-' + j" class="log-mesh-line">{{ it.text }}</div>
+                    </div>
+                  </div>
+                </div>
+                <p v-if="!logStreamGroups.sys.length && !logStreamGroups.groups.length" class="log-line log-sys">（无组播行）</p>
+              </template>
             </div>
           </div>
         </div>
@@ -864,7 +1122,7 @@
           打开示例：<code>?token=…&amp;groupId=group1</code>（WebSocket 路径默认 <code>/</code>，非默认可加 <code>&amp;wsPath=/your/path</code>）。
           收到 <code>open:…</code> 时，若已填写 <strong>token</strong> 与 <strong>groupId</strong> 会自动 POST <code>joinGroupBy_Id</code>；否则填好 <strong>groupId</strong>（及必要时 token）后点「绑定」。
           <strong>绑定</strong>成功（<code>code: 0</code>）后会自动请求 <code>GET /api/files?_id=…</code>；亦可手动点左侧 <strong>获取文件</strong>。左侧 <strong>搜索</strong>可按路径或机器名筛选列表（命中机器名时显示该机器全部路径）。点击文件会请求 <code>GET /api/file_get_contents?_id=…&amp;path=…</code>；tail-cli 以 <code>phase: start | chunk | done | error</code> 多条 WS 消息流式回传（Bandwidth 读盘，有数据即推送）。
-          日志横幅为 <code>==> machineId · /path/to.log &lt;==</code>（旧版可能为 <code>机器 . 路径</code> 或仅路径）；在组播面板右侧「过滤」可按 <strong>机器 id</strong>、<strong>路径</strong>（斜杠与反斜杠会统一再匹配）或正文关键词筛选（新消息生效）。
+          tail-cli 以 <code>stream:</code> 加 JSON 推送尾包，字段为 <code>machineId</code>、<code>path</code>、<code>at</code>（毫秒时间戳，推送时）、<code>bodyB64</code>。在组播面板可填「机器 / 路径」子串过滤。平铺时横幅右侧显示本行 <code>at</code>；按机器/路径/组合展示时，格标题旁显示该组内<strong>最新</strong>一包的 <code>at</code>。每格 ⛶ 可仅该格全屏。非 <code>stream:</code> 的旧消息若仍被转发，会按同样过滤与旧版横幅逻辑尽量兼容。
         </p>
       </div>
     </main>
@@ -876,6 +1134,45 @@
 
   function normalizePath(p) {
     return String(p).replace(/\\/g, '/').replace(/\/{2,}/g, '/').trim();
+  }
+
+  function streamGroupKey(entry, mode) {
+    if (mode === 'machine') {
+      return entry.machineId || '—';
+    }
+    if (mode === 'path') {
+      return entry.path || '—';
+    }
+    if (mode === 'both') {
+      return (entry.machineId || '—') + ' · ' + (entry.path || '—');
+    }
+    return '';
+  }
+
+  /**
+   * @param {Array<{ k: string }>} entries
+   * @param {string} mode
+   * @param {string} gk
+   * @returns {number}
+   */
+  function meshGroupKeyIndex(entries, mode, gk) {
+    if (mode === 'none' || !entries.length) {
+      return -1;
+    }
+    const gorder = [];
+    const seen = new Set();
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.k !== 'stream') {
+        continue;
+      }
+      const k2 = streamGroupKey(e, mode);
+      if (!seen.has(k2)) {
+        seen.add(k2);
+        gorder.push(k2);
+      }
+    }
+    return gorder.indexOf(gk);
   }
 
   /**
@@ -941,6 +1238,71 @@
       u[i] = bin.charCodeAt(i);
     }
     return u;
+  }
+
+  /**
+   * stream:{"machineId":"…","path":"…","at":<ms>,"bodyB64":"…"}
+   */
+  function parseStreamTailMessage(msg) {
+    if (!msg || !msg.startsWith('stream:')) {
+      return null;
+    }
+    const rest = msg.slice('stream:'.length);
+    if (!rest) {
+      return null;
+    }
+    let data;
+    try {
+      data = JSON.parse(rest);
+    } catch (e) {
+      return null;
+    }
+    if (data == null || typeof data !== 'object' || Array.isArray(data)) {
+      return null;
+    }
+    const machineId = typeof data.machineId === 'string' ? data.machineId : String(data.machineId != null ? data.machineId : '');
+    const filePath = typeof data.path === 'string' ? data.path : String(data.path != null ? data.path : '');
+    const bodyB64 = typeof data.bodyB64 === 'string' ? data.bodyB64 : '';
+    var at = 0;
+    if (typeof data.at === 'number' && Number.isFinite(data.at)) {
+      at = data.at;
+    } else if (typeof data.ts === 'number' && Number.isFinite(data.ts)) {
+      at = data.ts < 1e12 ? data.ts * 1000 : data.ts;
+    }
+    return {
+      machineId: machineId,
+      path: filePath,
+      at: at,
+      text: bodyB64 ? b64ToUtf8(bodyB64) : '',
+    };
+  }
+
+  function formatLogAtMs(at) {
+    if (at == null || at === 0) {
+      return '—';
+    }
+    const n = Number(at);
+    if (!Number.isFinite(n)) {
+      return '—';
+    }
+    const d = new Date(n);
+    if (isNaN(d.getTime())) {
+      return '—';
+    }
+    try {
+      return d.toLocaleString(undefined, {
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+      });
+    } catch (e) {
+      return d.toISOString().replace('T', ' ').replace('Z', '').slice(0, 23);
+    }
   }
 
   function b64ToUtf8(b64) {
@@ -1142,7 +1504,10 @@
       const token = ref(qs.get('token') || '');
       const groupId = ref(qs.get('groupId') || '');
       const wsPath = ref(qs.get('wsPath') || '/');
-      const filterKeyword = ref(qs.get('filter') || '');
+      const filterLogMachine = ref(qs.get('logMachine') || '');
+      const filterLogPath = ref(qs.get('logPath') || '');
+      const _lg = (qs.get('logGroup') || 'none').toLowerCase();
+      const logGroupBy = ref(['none', 'machine', 'path', 'both'].includes(_lg) ? _lg : 'none');
       const hintExpanded = ref(false);
       const headerExpanded = ref(false);
       const previewContentHidden = ref(false);
@@ -1152,7 +1517,8 @@
 
       const statusText = ref('未连接');
       const statusClass = ref('');
-      const logLines = ref([]);
+      /** @type {import('vue').Ref<Array<{ k: 'sys', text: string } | { k: 'stream', machineId: string, path: string, text: string, at: number }>>} */
+      const logEntries = ref([]);
       const logEl = ref(null);
       const previewEl = ref(null);
       const previewColumnEl = ref(null);
@@ -1252,6 +1618,70 @@
         return fileTreeRoot.value.children.length === 0;
       });
 
+      const logViewRows = computed(function () {
+        const entries = logEntries.value;
+        if (logGroupBy.value !== 'none') {
+          return [];
+        }
+        const vis = entries.filter(function (e) {
+          return logEntryDisplayVisible(e);
+        });
+        return vis.map(function (entry, i) {
+          if (entry.k === 'sys') {
+            return { _key: 'a-' + i, type: 'sys', text: entry.text };
+          }
+          return {
+            _key: 'b-' + i,
+            type: 'stream',
+            machineId: entry.machineId,
+            path: entry.path,
+            text: entry.text,
+            at: entry.at != null && Number.isFinite(entry.at) ? entry.at : 0,
+            showPrefix: true,
+          };
+        });
+      });
+
+      const logStreamGroups = computed(function () {
+        const mode = logGroupBy.value;
+        if (mode === 'none') {
+          return { sys: [], groups: [] };
+        }
+        const entries = logEntries.value;
+        const sys = [];
+        for (let i = 0; i < entries.length; i++) {
+          if (entries[i].k === 'sys' && logEntryDisplayVisible(entries[i])) {
+            sys.push(entries[i].text);
+          }
+        }
+        const streams = entries.filter(function (e) {
+          return e.k === 'stream' && logEntryDisplayVisible(e);
+        });
+        const gmap = new Map();
+        const gorder = [];
+        for (let i = 0; i < streams.length; i++) {
+          const s = streams[i];
+          const k = streamGroupKey(s, mode);
+          if (!gmap.has(k)) {
+            gorder.push(k);
+            gmap.set(k, []);
+          }
+          gmap.get(k).push(s);
+        }
+        const groups = gorder.map(function (gk) {
+          const items = gmap.get(gk) || [];
+          var atLatest = 0;
+          for (let j = 0; j < items.length; j++) {
+            const a = items[j].at;
+            if (a != null && Number(a) > atLatest) {
+              atLatest = Number(a);
+            }
+          }
+          return { key: gk, label: gk, items: items, atLatest: atLatest };
+        });
+        return { sys, groups };
+      });
+
       const filePanelHint = computed(function () {
         if (fileListError.value) {
           return '';
@@ -1329,24 +1759,223 @@
         }
       }
 
-      function isLogPinnedToBottom() {
-        const el = logEl.value;
+      function toggleLogMeshCellFullscreen(ev) {
+        const cell = ev.currentTarget.closest('.log-mesh-cell');
+        if (!cell) {
+          return;
+        }
+        const cur = getFullscreenElement();
+        if (cur === cell) {
+          exitFullscreenDoc();
+          return;
+        }
+        logContentHidden.value = false;
+        function enter() {
+          const req = cell.requestFullscreen || cell.webkitRequestFullscreen;
+          if (req) {
+            req.call(cell).catch(function () {});
+          }
+        }
+        if (cur && cur !== cell) {
+          const p = document.exitFullscreen ? document.exitFullscreen() : null;
+          if (p && typeof p.then === 'function') {
+            p.then(enter).catch(enter);
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+            setTimeout(enter, 0);
+          } else {
+            enter();
+          }
+        } else {
+          enter();
+        }
+      }
+
+      const LOG_SCROLL_PIN_PX = 12;
+
+      function isElBottomPinned(el, threshold) {
+        const t = typeof threshold === 'number' ? threshold : LOG_SCROLL_PIN_PX;
         if (!el) {
           return true;
         }
-        const threshold = 12;
-        return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+        return el.scrollHeight - el.scrollTop - el.clientHeight <= t;
       }
+
+      function isLogPinnedToBottom() {
+        return isElBottomPinned(logEl.value, LOG_SCROLL_PIN_PX);
+      }
+
+      /**
+       * 在 Vue 改 DOM 后双帧拉到底，与平贴底逻辑一致，避免 scrollHeight 尚未更新
+       */
+      function scrollElementToBottomStabilized(el) {
+        scrollElementsToBottomStabilized(el ? [el] : []);
+      }
+
+      function scrollElementsToBottomStabilized(els) {
+        const list = (els || []).filter(function (e) {
+          return Boolean(e);
+        });
+        if (!list.length) {
+          return;
+        }
+        nextTick(function () {
+          nextTick(function () {
+            requestAnimationFrame(function () {
+              for (let i = 0; i < list.length; i++) {
+                list[i].scrollTop = list[i].scrollHeight;
+              }
+              requestAnimationFrame(function () {
+                for (let j = 0; j < list.length; j++) {
+                  list[j].scrollTop = list[j].scrollHeight;
+                }
+              });
+            });
+          });
+        });
+      }
+
+      function scrollLogMeshLayoutToBottom() {
+        const root = logEl.value;
+        if (!root) {
+          return;
+        }
+        const nodes = root.querySelectorAll('.log-mesh-body');
+        const toScroll = [];
+        for (let i = 0; i < nodes.length; i++) {
+          toScroll.push(nodes[i]);
+        }
+        toScroll.push(root);
+        scrollElementsToBottomStabilized(toScroll);
+      }
+
+      watch(
+        logGroupBy,
+        function (mode) {
+          if (mode === 'none') {
+            return;
+          }
+          scrollLogMeshLayoutToBottom();
+        },
+        { flush: 'post' }
+      );
 
       function appendLog(text) {
         const pin = isLogPinnedToBottom();
-        logLines.value = logLines.value.concat([text]);
+        logEntries.value = logEntries.value.concat([{ k: 'sys', text: String(text) }]);
         if (pin) {
-          nextTick(function () {
-            const el = logEl.value;
-            if (el) {
-              el.scrollTop = el.scrollHeight;
+          scrollElementToBottomStabilized(logEl.value);
+        }
+      }
+
+      function logFilterMatchesStream(machineId, filePath) {
+        const fm = filterLogMachine.value.trim().toLowerCase();
+        const fpt = filterLogPath.value.trim();
+        if (fm) {
+          if (!String(machineId).toLowerCase().includes(fm)) {
+            return false;
+          }
+        }
+        if (fpt) {
+          const pNorm = normalizePath(filePath).toLowerCase();
+          const fNorm = normalizePath(fpt).toLowerCase();
+          if (!pNorm.includes(fNorm) && !String(filePath).toLowerCase().includes(fpt.toLowerCase())) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      function meshGroupKeyIndexVisible(entries, mode, gk) {
+        if (mode === 'none' || !entries || !entries.length) {
+          return -1;
+        }
+        const gorder = [];
+        const seen = new Set();
+        for (let i = 0; i < entries.length; i++) {
+          const e = entries[i];
+          if (e.k !== 'stream' || !logFilterMatchesStream(e.machineId, e.path)) {
+            continue;
+          }
+          const k2 = streamGroupKey(e, mode);
+          if (!seen.has(k2)) {
+            seen.add(k2);
+            gorder.push(k2);
+          }
+        }
+        return gorder.indexOf(gk);
+      }
+
+      function logEntryDisplayVisible(e) {
+        if (e.k === 'stream') {
+          return logFilterMatchesStream(e.machineId, e.path);
+        }
+        if (e.k === 'sys') {
+          return legacyLogLineMatchesFilter(e.text);
+        }
+        return true;
+      }
+
+      function appendStreamLogEntry(machineId, filePath, text, at) {
+        const atMs = typeof at === 'number' && Number.isFinite(at) ? at : 0;
+        const mode = logGroupBy.value;
+        const gk = streamGroupKey(
+          { machineId: String(machineId), path: String(filePath) },
+          mode
+        );
+        let pinMesh = true;
+        let pinMeshOuter = false;
+        if (mode !== 'none') {
+          pinMeshOuter = isLogPinnedToBottom();
+          const idxBefore = meshGroupKeyIndexVisible(logEntries.value, mode, gk);
+          if (idxBefore >= 0) {
+            const root = logEl.value;
+            if (root) {
+              const bodies = root.querySelectorAll('.log-mesh-body');
+              const body = bodies[idxBefore];
+              if (body) {
+                pinMesh = isElBottomPinned(body, LOG_SCROLL_PIN_PX);
+              } else {
+                pinMesh = true;
+              }
             }
+          }
+        }
+        const pinFlat = mode === 'none' && isLogPinnedToBottom();
+        logEntries.value = logEntries.value.concat([
+          {
+            k: 'stream',
+            machineId: String(machineId),
+            path: String(filePath),
+            text: String(text),
+            at: atMs,
+          },
+        ]);
+        if (mode === 'none' && pinFlat) {
+          scrollElementToBottomStabilized(logEl.value);
+          return;
+        }
+        if (mode !== 'none' && (pinMesh || pinMeshOuter)) {
+          nextTick(function () {
+            const root = logEl.value;
+            if (!logFilterMatchesStream(String(machineId), String(filePath))) {
+              if (pinMeshOuter) {
+                scrollElementToBottomStabilized(root);
+              }
+              return;
+            }
+            const idxAfter = meshGroupKeyIndexVisible(logEntries.value, mode, gk);
+            const toScroll = [];
+            if (root && idxAfter >= 0 && pinMesh) {
+              const body = root.querySelectorAll('.log-mesh-body')[idxAfter];
+              if (body) {
+                toScroll.push(body);
+              }
+            }
+            if (pinMeshOuter) {
+              toScroll.push(root);
+            }
+            scrollElementsToBottomStabilized(toScroll);
           });
         }
       }
@@ -1401,11 +2030,21 @@
       }
 
       function downloadLogContent() {
-        if (!logLines.value.length) {
-          appendLog('[下载] 组播日志为空');
+        const vis = logEntries.value.filter(function (e) {
+          return logEntryDisplayVisible(e);
+        });
+        if (!vis.length) {
+          appendLog(logEntries.value.length ? '[下载] 当前筛选项下无可见日志' : '[下载] 组播日志为空');
           return;
         }
-        const text = logLines.value.join('\n');
+        const text = vis
+          .map(function (e) {
+            if (e.k === 'sys') {
+              return e.text;
+            }
+            return '[' + e.machineId + '] ' + e.path + '  ' + e.text;
+          })
+          .join('\n');
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         triggerTextDownload(text, 'multicast-log-' + stamp + '.txt');
       }
@@ -1655,13 +2294,41 @@
         }
       }
 
+      function legacyLogLineMatchesFilter(line) {
+        const fm = filterLogMachine.value.trim().toLowerCase();
+        const fpt = filterLogPath.value.trim();
+        if (!fm && !fpt) {
+          return true;
+        }
+        const lc = line.toLowerCase();
+        if (fm) {
+          if (!lc.includes(fm)) {
+            if (fpt) {
+              return false;
+            }
+            return true;
+          }
+        }
+        if (fpt) {
+          if (!normalizePath(line).toLowerCase().includes(normalizePath(fpt).toLowerCase()) && !lc.includes(fpt.toLowerCase())) {
+            return !fm;
+          }
+        }
+        return true;
+      }
+
       function emitTailLogChunk(msg) {
-        const kwRaw = filterKeyword.value.trim();
-        if (!kwRaw) {
-          appendLog(msg);
+        if (!msg) {
           return;
         }
-        const kw = kwRaw.toLowerCase();
+        if (!filterLogMachine.value.trim() && !filterLogPath.value.trim()) {
+          const pin = isLogPinnedToBottom();
+          logEntries.value = logEntries.value.concat([{ k: 'sys', text: String(msg) }]);
+          if (pin) {
+            scrollElementToBottomStabilized(logEl.value);
+          }
+          return;
+        }
         const lines = msg.split(/\r?\n/);
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -1670,23 +2337,14 @@
           if (bannerMatch) {
             const inner = bannerMatch[1];
             const { machineId: bannerMid, filePath: bannerPath } = parseTailBannerInner(inner);
-            const innerLc = inner.toLowerCase();
-            const midLc = String(bannerMid).toLowerCase();
-            const pathNorm = normalizePath(bannerPath).toLowerCase();
-            const kwNorm = normalizePath(kwRaw).toLowerCase();
-            const hit =
-              innerLc.includes(kw) ||
-              midLc.includes(kw) ||
-              pathNorm.includes(kw) ||
-              (kwNorm.length > 0 && pathNorm.includes(kwNorm)) ||
-              forBanner.toLowerCase().includes(kw);
+            const hit = logFilterMatchesStream(bannerMid, bannerPath);
             logSectionMatches.value = hit;
             if (hit) {
               appendLog(line);
             }
             continue;
           }
-          if (logSectionMatches.value || line.toLowerCase().includes(kw)) {
+          if (logSectionMatches.value || legacyLogLineMatchesFilter(line)) {
             appendLog(line);
           }
         }
@@ -1696,6 +2354,17 @@
         const msg = typeof ev.data === 'string' ? ev.data : '';
         if (msg.startsWith('api_file_get_contents_response:')) {
           applyFileGetContentsPayload(msg.slice('api_file_get_contents_response:'.length));
+          return;
+        }
+        if (msg.startsWith('stream:')) {
+          const p = parseStreamTailMessage(msg);
+          if (p) {
+            appendStreamLogEntry(p.machineId, p.path, p.text, p.at);
+          } else {
+            appendLog(
+              '[stream] 无法解析: ' + msg.slice(0, 120) + (msg.length > 120 ? '…' : '')
+            );
+          }
           return;
         }
         if (msg.startsWith('api_files_response:')) {
@@ -1841,7 +2510,7 @@
       }
 
       function clearLog() {
-        logLines.value = [];
+        logEntries.value = [];
       }
 
       async function fetchApiFiles() {
@@ -1886,6 +2555,11 @@
 
       onMounted(function () {
         connect();
+        nextTick(function () {
+          if (logGroupBy.value !== 'none') {
+            scrollLogMeshLayoutToBottom();
+          }
+        });
       });
 
       onUnmounted(function () {
@@ -1904,7 +2578,11 @@
       return {
         token,
         groupId,
-        filterKeyword,
+        filterLogMachine,
+        filterLogPath,
+        logGroupBy,
+        logViewRows,
+        logStreamGroups,
         hintExpanded,
         headerExpanded,
         previewContentHidden,
@@ -1914,12 +2592,13 @@
         fileSearchNoMatch,
         statusText,
         statusClass,
-        logLines,
+        logEntries,
         logEl,
         previewEl,
         previewColumnEl,
         logColumnEl,
         togglePanelFullscreen,
+        toggleLogMeshCellFullscreen,
         downloadPreviewContent,
         downloadLogContent,
         canDisconnect,
@@ -1941,6 +2620,7 @@
         previewBanner,
         previewBodyText,
         formatBytes,
+        formatLogAtMs,
       };
     },
   }).mount('#app');

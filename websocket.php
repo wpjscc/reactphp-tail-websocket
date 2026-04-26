@@ -59,7 +59,7 @@ $connectionGroup->on('message', function ($from, $msg) use ($connectionGroup, $g
 
         return;
     }
-    $connectionGroup->sendToGroup($group, base64_decode($msg), [], [$from->_id]);
+    $connectionGroup->sendToGroup($group, $msg, [], [$from->_id]);
 });
 
 $connectionGroup->on('close', function ($conn, $reason) {
